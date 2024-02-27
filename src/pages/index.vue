@@ -1,7 +1,7 @@
 <template>
-  <div class="px-4">
+  <div class="px-4 h-screen overflow-auto overscroll-none">
     <Popover as="template">
-      <header class="sticky top-0bg-white shadow-sm">
+      <header class="sticky top-0 bg-white shadow-sm z-10">
         <div class="mx-auto max-w-7xl px-4 sm:px-6">
           <div class="relative flex justify-between">
             <div class="min-w-0 flex-1 md:px-8">
@@ -31,14 +31,11 @@
                 </div>
               </div>
             </div>
-            <div
-              class="flex items-center md:absolute md:inset-y-0 md:right-0 lg:hidden"
-            >
-              <!-- Mobile menu button -->
+            <div class="flex items-center">
               <button
                 type="button"
                 class="rounded-full bg-slate-600 p-2 text-white shadow-sm hover:bg-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-600"
-                v-on:click="createNewToken"
+                @click="createNewToken"
               >
                 <PlusIcon class="h-5 w-5" aria-hidden="true" />
               </button>
@@ -54,8 +51,13 @@
 <script setup lang="ts">
 import { ref } from "vue"
 import { Popover } from "@headlessui/vue"
-import { MagnifyingGlassIcon, PlusIcon } from "@heroicons/vue/20/solid"
+import { MagnifyingGlassIcon } from "@heroicons/vue/20/solid"
+import { PlusIcon } from "@heroicons/vue/24/outline"
+
+definePageMeta({
+  middleware: "onboarding",
+})
 
 const searchQuery = ref("")
-const createNewToken = () => navigateTo("/add-new-token")
+const createNewToken = () => navigateTo("/token/create")
 </script>

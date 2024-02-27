@@ -1,25 +1,24 @@
-import type tokenVue from '~/pages/token.vue'
 <template>
   <ul role="list" class="divide-y divide-gray-100">
     <li
       v-for="token in filteredTokens"
-      :key="token.name"
+      :key="token.otp.label"
       class="relative flex justify-between gap-x-6 py-5"
     >
       <div class="flex shrink-0 items-center">
         <span
-          class="inline-flex h-14 w-14 items-center justify-center rounded-full bg-slate-500"
+          class="inline-flex h-14 w-14 items-center justify-center rounded-full bg-gray-500"
         >
           <span class="text-xl font-medium leading-none text-white">{{
-            getAvatarPlaceholder(token.name)
+            getAvatarPlaceholder(token.otp.label)
           }}</span>
         </span>
       </div>
       <div class="flex shrink-0 items-center">
-        <p class="text-2xl font-semibold text-gray-900">
-          <NuxtLink :to="`${token.to}`">
+        <p class="text-2xl font-semibold text-gray-600">
+          <NuxtLink :to="`tokens/${token.id}`">
             <span class="absolute inset-x-0 -top-px bottom-0" />
-            {{ token.name }}</NuxtLink
+            {{ token.otp.label }}</NuxtLink
           >
         </p>
       </div>
@@ -33,71 +32,23 @@ import type tokenVue from '~/pages/token.vue'
   </ul>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ChevronRightIcon } from "@heroicons/vue/20/solid"
 
-const tokens = [
-  {
-    name: "Bitwarden",
-    to: "token",
-  },
-  {
-    name: "Stripe",
-    to: "token",
-  },
-  {
-    name: "Cloudflare",
-    to: "token",
-  },
-  {
-    name: "Scaleway",
-    to: "token",
-  },
-  {
-    name: "LinkedIn",
-    to: "token",
-  },
-  {
-    name: "Amazon Web Services",
-    to: "token",
-  },
-]
+const tokens: Token[] = store.getState().tokens
 
 const props = defineProps({
   searchQuery: String,
 })
 
-// const tokens = [
-//   {
-//     name: "Bitwarden",
-//   },
-//   {
-//     name: "Stripe",
-//   },
-//   {
-//     name: "Dries Vincent",
-//   },
-//   {
-//     name: "Cloudflare",
-//   },
-//   {
-//     name: "LinkedIn",
-//   },
-//   {
-//     name: "Kraken",
-//   },
-// ]
-
-const getAvatarPlaceholder = (name) =>
-  name
-    .split(" ")
-    .map((word) => word[0])
-    .slice(0, 3)
-    .join("")
-
 const filteredTokens = computed(() => {
+  if (!props.searchQuery) {
+    return tokens
+  }
   return tokens.filter((token) => {
-    return token.name.toLowerCase().includes(props.searchQuery.toLowerCase())
+    return token.otp.label
+      .toLowerCase()
+      .includes(props.searchQuery!.toLowerCase())
   })
 })
 </script>

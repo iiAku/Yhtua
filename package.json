@@ -2,6 +2,9 @@
   "name": "nuxt-app",
   "private": true,
   "type": "module",
+  "author": {
+    "name": "Yoann Gendrey"
+  },
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev",
@@ -15,8 +18,11 @@
     "@heroicons/vue": "^2.1.1",
     "@tauri-apps/cli": "^1.5.9",
     "nuxt": "^3.10.2",
+    "otpauth": "^9.2.2",
     "vue": "^3.4.19",
-    "vue-router": "^4.2.5"
+    "vue-router": "^4.2.5",
+    "zod": "^3.22.4",
+    "zustand": "^4.5.1"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.17",

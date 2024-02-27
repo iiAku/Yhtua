@@ -9,7 +9,9 @@ export default {
     "./src/error.vue",
   ],
   theme: {
-    extend: {},
+    extend: {
+      overscrollBehavior: ['none']
+    },
   },
   plugins: [],
 }
