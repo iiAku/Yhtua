@@ -25,12 +25,12 @@ const notification = useNotification()
 
 const settings = [
   {
-    href: importTokens(notification),
+    href: () => importTokens(notification),
     title: "Import Your Tokens",
     description: "Import your Yhtua token settings ",
   },
   {
-    href: exportTokens(notification),
+    href: () => exportTokens(notification),
     title: "Export Your Tokens",
     description: "Export your Yhtua token settings",
   },
