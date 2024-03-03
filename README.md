@@ -1,75 +1,29 @@
-# Nuxt 3 Minimal Starter
+<h1 align="center">Welcome to Yhtua 👋</h1>
+<p>
+  <img alt="Version" src="https://img.shields.io/badge/version-0.0.1-blue.svg?cacheSeconds=2592000" />
+  <a href="#" target="_blank">
+    <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" />
+  </a>
+</p>
 
-Look at the [Nuxt 3 documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+> Yhtua is a desktop application designed to provide secure and convenient two-factor authentication (2FA) management.
 
-## Setup
+## Install
 
-Make sure to install the dependencies:
-
-```bash
-# npm
+```sh
 npm install
-
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
 ```
 
-## Development Server
+## Author
 
-Start the development server on `http://localhost:3000`:
+👤 **Yoann Gendrey**
 
-```bash
-# npm
-npm run dev
+* Website: https://yoann.gendrey.fr
+* Github: [@iiAku](https://github.com/iiAku)
 
-# pnpm
-pnpm run dev
+## Show your support
 
-# yarn
-yarn dev
+Give a ⭐️ if this project helped you!
 
-# bun
-bun run dev
-```
-
-## Production
-
-Build the application for production:
-
-```bash
-# npm
-npm run build
-
-# pnpm
-pnpm run build
-
-# yarn
-yarn build
-
-# bun
-bun run build
-```
-
-Locally preview production build:
-
-```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm run preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
-```
-
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+***
+_This README was generated with ❤️ by [readme-md-generator](https://github.com/kefranabg/readme-md-generator)_

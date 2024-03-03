@@ -45,6 +45,18 @@ export const store = create<Store>()(
   )
 )
 
+export const getTokens = (): Token[] => {
+  const tokens = store.getState().tokens
+  // filtering out that way as we want to keep reference
+  tokens.reduce((acc, token, index) => {
+    if (!tokenSchema.safeParse(token).success) {
+      tokens.splice(index, 1)
+    }
+    return acc
+  }, tokens)
+  return store.getState().tokens
+}
+
 export const addTokenSchema = z.object({
   secret: z.string().refine(value => /^[A-Z2-7]+=*$/.test(value), {
     message: 'Your secret is not valid',

@@ -32,7 +32,11 @@
         >
       </div>
     </div>
-    <Notification text="Copied !" v-if="notification.show" />
+    <Notification
+      :text="notification.text"
+      :type="notification.type"
+      v-if="notification.show"
+    />
   </div>
 </template>
 

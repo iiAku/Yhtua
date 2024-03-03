@@ -10,7 +10,11 @@
 
       <div class="flex-col w-full my-6 px-8">
         <SettingList :settings="settings" />
-        <Notification :text="notification.text" v-if="notification.show" />
+        <Notification
+          :text="notification.text"
+          :type="notification.type"
+          v-if="notification.show"
+        />
       </div>
     </div>
   </div>
@@ -37,7 +41,7 @@ const exportTokens = async () => {
 
     const backup = {
       version: "1.0",
-      tokens: store.getState().tokens,
+      tokens: getTokens(),
     }
 
     // Now we can write the file to the disk
@@ -50,6 +54,7 @@ const exportTokens = async () => {
     await useShowNotification(notification, {
       text: "Error while exporting tokens",
       delay: 1500,
+      type: NotificationType.Danger,
     })
   }
 }
@@ -71,7 +76,7 @@ const importTokens = async () => {
     const jsonContent = await readTextFile(jsonPath as string)
     const parsedFile = JSON.parse(jsonContent)
     const parsed = exportImportSchema.parse(parsedFile)
-    store.getState().tokens.push(...parsed.tokens)
+    getTokens().push(...parsed.tokens)
     await useShowNotification(notification, {
       text: "Tokens successfully imported",
       delay: 1500,
@@ -80,6 +85,7 @@ const importTokens = async () => {
     await useShowNotification(notification, {
       text: "Error while importing tokens",
       delay: 1500,
+      type: NotificationType.Danger,
     })
   }
 }

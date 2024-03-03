@@ -24,6 +24,7 @@
         />
         <input
           v-model="token.secret"
+          @input="token.secret = token.secret.toUpperCase()"
           class="my-2 min-w-0 flex-auto rounded-md border-0 bg-white/5 px-3.5 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-white sm:text-sm sm:leading-6 w-full"
           placeholder="Enter your token security code"
         />
@@ -75,13 +76,19 @@ const addToken = async ({
   }
 
   const token: Token = createNewToken(
-    validParams.data.secret,
+    validParams.data.secret.toUpperCase(),
     validParams.data.label,
     validParams.data.digits
   )
 
-  store.getState().tokens.push(token)
+  console.log("isNEwTokenValid", tokenSchema.safeParse(token))
 
+  const tokens = getTokens()
+  tokens.push(token)
+
+  console.log(tokens)
+
+  console.log("navigating to", `/tokens/${token.id}`)
   navigateTo(`/tokens/${token.id}`)
 }
 </script>

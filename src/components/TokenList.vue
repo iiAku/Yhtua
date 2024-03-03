@@ -35,7 +35,7 @@
 <script setup lang="ts">
 import { ChevronRightIcon } from "@heroicons/vue/20/solid"
 
-const tokens: Token[] = store.getState().tokens
+const tokens: Token[] = getTokens()
 
 const props = defineProps({
   searchQuery: String,

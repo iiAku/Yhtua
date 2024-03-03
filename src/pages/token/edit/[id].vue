@@ -47,7 +47,8 @@
       </div>
     </div>
     <Notification
-      :text="notification.text!"
+      :text="notification.text"
+      :type="notification.type"
       :withLoader="notification.withLoader"
       v-if="notification.show"
     />
@@ -61,7 +62,7 @@ import { ref } from "vue"
 const route = useRoute()
 
 const token = ref<Token | undefined>(
-  store.getState().tokens.find((token) => token.id === route.params.id)
+  getTokens().find((token) => token.id === route.params.id)
 )
 
 const notification = useNotification()
@@ -87,8 +88,7 @@ const closeModal = async (type: string, response: boolean) => {
 const setDigit = (newDigit: number) => (token.value!.otp.digits = newDigit)
 
 const updateToken = async (token: Token) => {
-  const tokens = [...store.getState().tokens]
-  const updatedToken = tokens.find((t) => t.id === token.id)
+  const updatedToken = getTokens().find((t) => t.id === token.id)
   if (!updatedToken) return
 
   updatedToken.otp.label = token.otp.label
@@ -101,7 +101,7 @@ const updateToken = async (token: Token) => {
 }
 
 const removeToken = async (token: Token) => {
-  const tokens = [...store.getState().tokens]
+  const tokens = getTokens()
   const removedToken = tokens.find((token) => token.id === token.id)
   if (!removedToken) return
 
@@ -111,7 +111,7 @@ const removeToken = async (token: Token) => {
 
   await useShowNotification(notification, {
     text: "Token successfully removed",
-    delay: 1500,
+    delay: 2000,
     withLoader: true,
   })
 

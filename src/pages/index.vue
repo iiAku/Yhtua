@@ -4,15 +4,6 @@
       <header class="sticky top-0 bg-white shadow-sm z-10">
         <div class="mx-auto max-w-7xl px-4 sm:px-6">
           <div class="relative flex justify-between">
-            <div class="flex items-center gap-x-3">
-              <button
-                type="button"
-                class="rounded-full bg-slate-600 p-2 text-white shadow-sm hover:bg-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-600"
-                @click="openSettings"
-              >
-                <Cog6ToothIcon class="h-5 w-5" aria-hidden="true" />
-              </button>
-            </div>
             <div class="min-w-0 flex-1 md:px-8">
               <div
                 class="flex items-center px-6 py-4 md:mx-auto md:max-w-3xl lg:mx-0 lg:max-w-none xl:px-0"
@@ -43,6 +34,14 @@
             <div class="flex items-center gap-x-3">
               <button
                 type="button"
+                class="rounded-full bg-gray-600 p-2 text-white shadow-sm hover:bg-gray-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-600"
+                @click="openSettings"
+              >
+                <Cog6ToothIcon class="h-5 w-5" aria-hidden="true" />
+              </button>
+
+              <button
+                type="button"
                 class="rounded-full bg-slate-600 p-2 text-white shadow-sm hover:bg-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-600"
                 @click="createNewToken"
               >
@@ -63,7 +62,7 @@ import { Popover } from "@headlessui/vue"
 import { MagnifyingGlassIcon } from "@heroicons/vue/20/solid"
 import { Cog6ToothIcon, PlusIcon } from "@heroicons/vue/24/outline"
 
-//TODO: debug purpose - remove when release
+//TODO: debug purpose - remove when
 store.persist.clearStorage()
 
 definePageMeta({
