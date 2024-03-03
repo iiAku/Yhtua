@@ -62,8 +62,6 @@ import { Popover } from "@headlessui/vue"
 import { MagnifyingGlassIcon } from "@heroicons/vue/20/solid"
 import { Cog6ToothIcon, PlusIcon } from "@heroicons/vue/24/outline"
 
-//TODO: debug purpose - remove when
-store.persist.clearStorage()
 
 definePageMeta({
   middleware: "onboarding",

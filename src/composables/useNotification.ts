@@ -34,8 +34,6 @@ export const useShowNotification = async (
     text,
     withLoader
   }
-
-  console.log(JSON.stringify(notification.value))
   await useSleep(delay)
   if (notification.value.show) {
     notification.value.show = false
