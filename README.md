@@ -18,12 +18,19 @@ npm install
 
 👤 **Yoann Gendrey**
 
-* Website: https://yoann.gendrey.fr
-* Github: [@iiAku](https://github.com/iiAku)
+- Website: https://yoann.gendrey.fr
+- Github: [@iiAku](https://github.com/iiAku)
 
 ## Show your support
 
 Give a ⭐️ if this project helped you!
 
-***
+## App Logo Credits
+
+- **COLLECTION:** [Education Bordered Flat Vectors](https://www.svgrepo.com/collection/education-bordered-flat-vectors/)
+- **LICENSE:** [CC Attribution License](https://www.svgrepo.com/page/licensing/#CC%20Attribution)
+- **AUTHOR:** [Madebyelvis](https://www.svgrepo.com/author/Madebyelvis/)
+
+---
+
 _This README was generated with ❤️ by [readme-md-generator](https://github.com/kefranabg/readme-md-generator)_
