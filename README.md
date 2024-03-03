@@ -6,13 +6,7 @@
   </a>
 </p>
 
-> Yhtua is a desktop application designed to provide secure and convenient two-factor authentication (2FA) management.
-
-## Install
-
-```sh
-npm install
-```
+> Yhtua is an open source and free desktop application and Authy alternative designed to provide secure and convenient two-factor authentication (2FA) management.
 
 ## Author
 
