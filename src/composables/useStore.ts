@@ -8,7 +8,7 @@ export const DEFAULT_PERIOD = 30
 
 export const DEFAULT_DIGITS = 6
 
-const tokenSchema = z.object({
+export const tokenSchema = z.object({
   id: z.string(),
   otp: z.object({
     issuer: z.string(),
@@ -18,6 +18,12 @@ const tokenSchema = z.object({
     period: z.number().default(DEFAULT_PERIOD),
     secret: z.string()
   })
+})
+
+
+export const exportImportSchema = z.object({
+  version: z.string().default('1.0'),
+  tokens: z.array(tokenSchema)
 })
 
 export const storeShema = z.object({
@@ -38,3 +44,11 @@ export const store = create<Store>()(
     }
   )
 )
+
+export const addTokenSchema = z.object({
+  secret: z.string().refine(value => /^[A-Z2-7]+=*$/.test(value), {
+    message: 'Your secret is not valid',
+  }),
+  label: z.string().min(1, { message: 'Label is required' }),
+  digits: z.number().min(6).max(8).default(6),
+})

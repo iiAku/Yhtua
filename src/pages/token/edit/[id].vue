@@ -46,7 +46,11 @@
         </div>
       </div>
     </div>
-    <Notification text="Updated!" v-if="show" />
+    <Notification
+      :text="notification.text!"
+      :withLoader="notification.withLoader"
+      v-if="notification.show"
+    />
   </div>
 </template>
 
@@ -60,12 +64,11 @@ const token = ref<Token | undefined>(
   store.getState().tokens.find((token) => token.id === route.params.id)
 )
 
-const show = ref(false)
+const notification = useNotification()
 
 const modal = useModal()
 
-const showRemoveDialogue = () => {
-  console.log("showmodal called")
+const showRemoveDialogue = () =>
   useShowModal(modal.value.Danger, {
     title: "Remove Token",
     text: "Are you sure you want to remove this token? This action cannot be undone.",
@@ -73,19 +76,17 @@ const showRemoveDialogue = () => {
     cancelTextButton: "Cancel",
     type: "Danger",
   })
-  console.log(modal.value.Danger)
-}
 
-const closeModal = (type: string, response: boolean) => {
-  if (response) {
-    removeToken(token.value!)
-  }
+const closeModal = async (type: string, response: boolean) => {
   modal.value.Danger.open = false
+  if (response) {
+    await removeToken(token.value!)
+  }
 }
 
 const setDigit = (newDigit: number) => (token.value!.otp.digits = newDigit)
 
-const updateToken = (token: Token) => {
+const updateToken = async (token: Token) => {
   const tokens = [...store.getState().tokens]
   const updatedToken = tokens.find((t) => t.id === token.id)
   if (!updatedToken) return
@@ -93,28 +94,27 @@ const updateToken = (token: Token) => {
   updatedToken.otp.label = token.otp.label
   updatedToken.otp.digits = token.otp.digits
 
-  store.setState({
-    tokens,
+  await useShowNotification(notification, {
+    text: "Token successfully updated",
+    delay: 1500,
   })
-
-  show.value = true
-  setTimeout(() => {
-    navigateTo(`/tokens/${updatedToken.id}`)
-    show.value = false
-  }, 1500)
 }
 
-const removeToken = (token: Token) => {
+const removeToken = async (token: Token) => {
   const tokens = [...store.getState().tokens]
   const removedToken = tokens.find((token) => token.id === token.id)
   if (!removedToken) return
+
   store.setState({
     tokens: tokens.filter((token) => token.id !== removedToken.id),
   })
-  show.value = true
-  setTimeout(() => {
-    navigateTo(`/`)
-    show.value = false
-  }, 1500)
+
+  await useShowNotification(notification, {
+    text: "Token successfully removed",
+    delay: 1500,
+    withLoader: true,
+  })
+
+  navigateTo(`/`)
 }
 </script>

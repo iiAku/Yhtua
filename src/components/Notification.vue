@@ -9,13 +9,19 @@
         leave-active-class="animate-fade-out"
       >
         <div
-          class="pointer-events-auto w-32 max-w-sm overflow-hidden rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5"
+          class="pointer-events-auto w-full text-center rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5"
         >
           <div class="p-4 center">
             <div class="flex items-start">
               <div class="flex-shrink-0">
                 <CheckCircleIcon
+                  v-if="props?.type === NotificationType.Success"
                   class="h-6 w-6 text-green-400"
+                  aria-hidden="true"
+                />
+                <XCircleIcon
+                  v-if="props?.type === NotificationType.Danger"
+                  class="h-6 w-6 text-red-400"
                   aria-hidden="true"
                 />
               </div>
@@ -24,6 +30,7 @@
                   {{ props.text }}
                 </p>
               </div>
+              <Loading v-if="props.withLoader" />
             </div>
           </div>
         </div>
@@ -33,9 +40,14 @@
 </template>
 
 <script setup>
-import { CheckCircleIcon } from "@heroicons/vue/24/outline"
+import { CheckCircleIcon, XCircleIcon } from "@heroicons/vue/24/outline"
 const props = defineProps({
-  text: String,
-  required: true,
+  text: {
+    type: String,
+    required: true,
+  },
+  show: Boolean,
+  type: NotificationType,
+  withLoader: Boolean,
 })
 </script>

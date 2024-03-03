@@ -34,7 +34,6 @@ import { RadioGroup, RadioGroupLabel, RadioGroupOption } from "@headlessui/vue"
 const props = defineProps({
   tokenLength: {
     type: Number,
-    required: true,
   },
 })
 

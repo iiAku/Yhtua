@@ -37,6 +37,11 @@
         </button>
       </div>
     </div>
+    <Notification
+      :text="notification.text"
+      :type="notification.type"
+      v-if="notification.show"
+    />
   </div>
 </template>
 
@@ -47,9 +52,11 @@ const token = reactive({
   digits: DEFAULT_DIGITS,
 })
 
+const notification = useNotification()
+
 const setDigit = (newDigit: number) => (token.digits = newDigit)
 
-const addToken = ({
+const addToken = async ({
   secret,
   label,
   digits,
@@ -58,10 +65,23 @@ const addToken = ({
   label: string
   digits: number
 }) => {
-  const token: Token = createNewToken(secret, label, digits)
-  store.setState({
-    tokens: [...store.getState().tokens, token],
-  })
+  const validParams = addTokenSchema.safeParse({ secret, label, digits })
+
+  if (validParams.success === false) {
+    return useShowNotification(notification, {
+      text: validParams.error.errors[0].message,
+      type: NotificationType.Danger,
+    })
+  }
+
+  const token: Token = createNewToken(
+    validParams.data.secret,
+    validParams.data.label,
+    validParams.data.digits
+  )
+
+  store.getState().tokens.push(token)
+
   navigateTo(`/tokens/${token.id}`)
 }
 </script>

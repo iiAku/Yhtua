@@ -32,7 +32,7 @@
         >
       </div>
     </div>
-    <Notification text="Copied !" v-if="show" />
+    <Notification text="Copied !" v-if="notification.show" />
   </div>
 </template>
 
@@ -41,7 +41,7 @@ import { ClipboardDocumentListIcon } from "@heroicons/vue/20/solid"
 
 const route = useRoute()
 
-const show = ref(false)
+const notification = useNotification()
 
 const time = ref(DEFAULT_PERIOD)
 
@@ -68,12 +68,13 @@ const updateToken = async (token: Token) => {
   renderedToken.remainingTime = remainingTime
 }
 
-const copy = () => {
+const copy = async () => {
   navigator.clipboard.writeText(renderedToken.value)
-  show.value = true
-  setTimeout(() => {
-    show.value = false
-  }, 2000)
+  await useShowNotification(notification, {
+    text: "Copied !",
+    type: NotificationType.Success,
+    delay: 2000,
+  })
 }
 
 const getRemainingTime = (period: number = 30) => {
