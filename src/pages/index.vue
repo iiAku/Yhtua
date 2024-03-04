@@ -53,7 +53,7 @@
         </header>
       </Popover>
     </div>
-    <div class="scrollbar-hide overflow-auto">
+    <div class="scrollbar-hide overflow-auto overscroll-none">
       <TokenList :searchQuery="searchQuery" />
     </div>
   </div>
