@@ -9,9 +9,9 @@
 > Yhtua is an open source and free desktop application and Authy alternative designed to provide secure and convenient two-factor authentication (2FA) management.
 
 <div style="display: flex; justify-content: space-between;">
-  <img src="https://github.com/iiAku/Yhtua/assets/21042952/cd9da689-2e3c-4412-8a3f-08c662874948" alt="Image 1" style="width: 33%;">
-  <img src="https://github.com/iiAku/Yhtua/assets/21042952/e48e4fe1-49c0-476e-bef3-82e4994c9c78" alt="Image 2" style="width: 33%;">
-  <img src="https://github.com/iiAku/Yhtua/assets/21042952/d267da58-1684-4f1a-bd89-ebaa7719195e" alt="Image 3" style="width: 33%;">
+  <img src="https://github.com/iiAku/Yhtua/assets/21042952/cd9da689-2e3c-4412-8a3f-08c662874948" alt="Image 1" style="width: 30%;">
+  <img src="https://github.com/iiAku/Yhtua/assets/21042952/e48e4fe1-49c0-476e-bef3-82e4994c9c78" alt="Image 2" style="width: 30%;">
+  <img src="https://github.com/iiAku/Yhtua/assets/21042952/d267da58-1684-4f1a-bd89-ebaa7719195e" alt="Image 3" style="width: 30%;">
 </div>
 
 ## Author
