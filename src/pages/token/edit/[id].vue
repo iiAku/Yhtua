@@ -101,12 +101,8 @@ const updateToken = async (token: Token) => {
 }
 
 const removeToken = async (token: Token) => {
-  const tokens = getTokens()
-  const removedToken = tokens.find((token) => token.id === token.id)
-  if (!removedToken) return
-
   store.setState({
-    tokens: tokens.filter((token) => token.id !== removedToken.id),
+    tokens: store.getState().tokens.filter((t: Token) => t.id !== token.id),
   })
 
   await useShowNotification(notification, {
