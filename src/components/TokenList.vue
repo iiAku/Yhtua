@@ -18,7 +18,7 @@
         <p class="text-2xl font-semibold text-gray-600">
           <NuxtLink :to="`tokens/${token.id}`">
             <span class="absolute inset-x-0 -top-px bottom-0" />
-            {{ token.otp.label }}</NuxtLink
+            {{ token.otp.label.slice(0, 40) }}</NuxtLink
           >
         </p>
       </div>

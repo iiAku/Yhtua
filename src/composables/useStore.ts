@@ -22,7 +22,7 @@ export const tokenSchema = z.object({
 
 
 export const exportImportSchema = z.object({
-  version: z.string().default('1.0'),
+  version: z.string(),
   tokens: z.array(tokenSchema)
 })
 
@@ -38,7 +38,13 @@ export const clearStore = () => store.persist.clearStorage()
 
 export const store = create<Store>()(
   persist(
-    (set, get) => (defaultStore()),
+    (set, get) => {
+      const store = get()
+      if (!store) {
+        return defaultStore()
+      }
+      return store
+    },
     {
       name: "yhtua",
     }
@@ -47,14 +53,14 @@ export const store = create<Store>()(
 
 export const getTokens = (): Token[] => {
   const tokens = store.getState().tokens
-  // filtering out that way as we want to keep reference
-  tokens.reduce((acc, token, index) => {
-    if (!tokenSchema.safeParse(token).success) {
-      tokens.splice(index, 1)
-    }
-    return acc
-  }, tokens)
+  store.setState({ tokens: tokens.filter(token => tokenSchema.safeParse(token).success) })
   return store.getState().tokens
+}
+
+export const storeAddToken = (token: Token | Token[]) => {
+  const tokens = Array.isArray(token) ? token : [token]
+  const validTokens = tokens.filter(token => tokenSchema.safeParse(token).success)
+  store.setState({ tokens: [...store.getState().tokens, ...validTokens] })
 }
 
 export const addTokenSchema = z.object({
