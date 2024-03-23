@@ -70,3 +70,19 @@ export const importTokens = async (notification: Notification, navigateToHome?: 
     })
   }
 }
+
+export const removeAllTokens = async (notification: Notification) => {
+  try {
+    store.setState(defaultStore())
+    await useShowNotification(notification, {
+      text: "All tokens removed",
+      delay: 1500,
+    })
+  } catch (error) {
+    await useShowNotification(notification, {
+      text: "Error while removing tokens",
+      delay: 1500,
+      type: NotificationType.Danger,
+    })
+  }
+}

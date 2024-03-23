@@ -36,6 +36,7 @@ export type Token = z.infer<typeof tokenSchema>
 
 export const clearStore = () => store.persist.clearStorage()
 
+
 export const store = create<Store>()(
   persist(
     (set, get) => {
@@ -62,6 +63,7 @@ export const storeAddToken = (token: Token | Token[]) => {
   const validTokens = tokens.filter(token => tokenSchema.safeParse(token).success)
   store.setState({ tokens: [...store.getState().tokens, ...validTokens] })
 }
+
 
 export const addTokenSchema = z.object({
   secret: z.string().refine(value => /^[A-Z2-7]+=*$/.test(value), {

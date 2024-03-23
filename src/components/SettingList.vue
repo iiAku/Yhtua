@@ -9,6 +9,7 @@
         <div class="flex items-center gap-x-3">
           <h2 class="min-w-0 text-sm font-semibold leading-6 text-white">
             <a @click="setting.href" href="#" class="flex gap-x-2">
+              <component :is="setting.icon" class="h-5 w-5" aria-hidden="true" />
               <span class="truncate">{{ setting.title }}</span>
               <span class="absolute inset-0" />
             </a>
