@@ -16,7 +16,7 @@ export const exportTokens = async (notification: Notification) => {
     }
 
     const backup = {
-      version: "1.0.2",
+      version: "1.1.0",
       tokens: getTokens(),
     }
 
