@@ -1,12 +1,12 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
-import { z } from 'zod'
+import { z } from 'zod/v4-mini'
 
 export const defaultStore = () => ({ tokens: [] })
 
-export const DEFAULT_PERIOD = 30
 
-export const DEFAULT_DIGITS = 6
+export const DEFAULT_PERIOD = 30;
+export const DEFAULT_DIGITS = 6;
 
 export const tokenSchema = z.object({
   id: z.string(),
@@ -14,11 +14,11 @@ export const tokenSchema = z.object({
     issuer: z.string(),
     label: z.string(),
     algorithm: z.string(),
-    digits: z.number().default(6),
-    period: z.number().default(DEFAULT_PERIOD),
-    secret: z.string()
-  })
-})
+    digits: z._default(z.number(), DEFAULT_DIGITS),
+    period: z._default(z.number(), DEFAULT_PERIOD),
+    secret: z.string(),
+  }),
+});
 
 
 export const exportImportSchema = z.object({
