@@ -1,7 +1,7 @@
-import { BaseDirectory, readTextFile, writeTextFile } from "@tauri-apps/api/fs"
+import { BaseDirectory, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs"
 
-import { open } from "@tauri-apps/api/dialog"
-import { save } from "@tauri-apps/api/dialog"
+import { open } from "@tauri-apps/plugin-dialog"
+import { save } from "@tauri-apps/plugin-dialog"
 
 export const exportTokens = async (notification: Notification) => {
   try {
@@ -16,7 +16,7 @@ export const exportTokens = async (notification: Notification) => {
     }
 
     const backup = {
-      version: "1.0.2",
+      version: "1.1.0",
       tokens: getTokens(),
     }
 
