@@ -1,9 +1,8 @@
-import { create } from "zustand"
+import { createStore } from "zustand/vanilla"
 import { persist } from "zustand/middleware"
 import { z } from 'zod/v4-mini'
 
 export const defaultStore = () => ({ tokens: [] })
-
 
 export const DEFAULT_PERIOD = 30;
 export const DEFAULT_DIGITS = 6;
@@ -20,7 +19,6 @@ export const tokenSchema = z.object({
   }),
 });
 
-
 export const exportImportSchema = z.object({
   version: z.string(),
   tokens: z.array(tokenSchema)
@@ -36,8 +34,7 @@ export type Token = z.infer<typeof tokenSchema>
 
 export const clearStore = () => store.persist.clearStorage()
 
-
-export const store = create<Store>()(
+export const store = createStore<Store>()(
   persist(
     (set, get) => {
       const store = get()
@@ -66,9 +63,11 @@ export const storeAddToken = (token: Token | Token[]) => {
 
 
 export const addTokenSchema = z.object({
-  secret: z.string().refine(value => /^[A-Z2-7]+=*$/.test(value), {
+  secret: z.string().check(z.refine(value => /^[A-Z2-7]+=*$/.test(value), {
     message: 'Your secret is not valid',
-  }),
-  label: z.string().min(1, { message: 'Label is required' }),
-  digits: z.number().min(6).max(8).default(6),
+  })),
+  label: z.string().check(z.minLength(1, { message: 'Label is required' })),
+  digits: z.number().check(z.refine(value => value >= 6 && value <= 8, {
+    message: 'Digits must be between 6 and 8',
+  })),
 })

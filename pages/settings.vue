@@ -31,6 +31,7 @@
 
 <script setup lang="ts">
 import { ArrowDownOnSquareIcon, ArrowUpOnSquareIcon, TrashIcon} from '@heroicons/vue/24/outline';
+import { exportTokens, importTokens, removeAllTokens } from "~/src/composables/useSettings";
 const notification = useNotification()
 
 const modal = useModal()
