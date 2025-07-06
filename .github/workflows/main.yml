@@ -37,7 +37,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
-          cache: 'npm' # Set this to npm, yarn or pnpm.
+
+      - name: install Bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          export PATH="$HOME/.bun/bin:$PATH"
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable # Set this to dtolnay/rust-toolchain@nightly
@@ -52,13 +56,13 @@ jobs:
 
       - name: install frontend dependencies
         # If you don't have `beforeBuildCommand` configured you may want to build your frontend here too.
-        run: npm install # change this to npm or pnpm depending on which one you use.
+        run: bun install
 
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
+          tagName: app-v__VERSION__ # the action automatically replaces __VERSION__ with the app version.
           releaseName: 'App v__VERSION__'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
