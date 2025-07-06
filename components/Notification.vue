@@ -13,7 +13,7 @@
         >
           <div class="p-4 center">
             <div class="flex items-start">
-              <div class="flex-shrink-0">
+              <div class="shrink-0">
                 <CheckCircleIcon
                   v-if="props?.type === NotificationType.Success"
                   class="h-6 w-6 text-green-400"

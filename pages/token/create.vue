@@ -86,7 +86,9 @@ const addToken = async ({
 
   if (validParams.success === false) {
     return useShowNotification(notification, {
-      text: validParams.error.errors[0].message,
+      text: validParams.error.issues
+        .map((issue) => issue.message)
+        .join(", "),
       type: NotificationType.Danger,
     })
   }

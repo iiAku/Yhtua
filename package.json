@@ -1,33 +1,30 @@
 {
-  "name": "nuxt-app",
-  "private": true,
+  "name": "Yhtua",
+  "version": "2.0",
+  "author": "Yoann Gendrey",
   "type": "module",
-  "author": {
-    "name": "Yoann Gendrey"
-  },
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare",
-    "tauri": "tauri"
+    "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "@headlessui/vue": "^1.7.19",
-    "@heroicons/vue": "^2.1.1",
-    "@tauri-apps/api": "^1.5.3",
-    "@tauri-apps/cli": "^1.5.10",
-    "nuxt": "^3.10.3",
-    "otpauth": "^9.2.2",
-    "vue": "^3.4.21",
-    "vue-router": "^4.3.0",
-    "zod": "^3.22.4",
-    "zustand": "^4.5.2"
-  },
-  "devDependencies": {
-    "autoprefixer": "^10.4.18",
-    "postcss": "^8.4.35",
-    "tailwindcss": "^3.4.1"
+    "@headlessui/vue": "^1.7.23",
+    "@heroicons/vue": "^2.2.0",
+    "@tailwindcss/vite": "^4.1.11",
+    "@tauri-apps/api": "^2.6.0",
+    "@tauri-apps/cli": "^2.6.2",
+    "@tauri-apps/plugin-dialog": "~2",
+    "@tauri-apps/plugin-fs": "~2",
+    "@tauri-apps/plugin-opener": "~2",
+    "nuxt": "^3.17.6",
+    "otpauth": "^9.4.0",
+    "tailwindcss": "^4.1.11",
+    "vue": "^3.5.17",
+    "vue-router": "^4.5.1",
+    "zod": "^3.25.74",
+    "zustand": "^5.0.6"
   }
 }
