@@ -39,7 +39,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: "./vuebase-tauri -> target"
+          workspaces: "./src-tauri -> target"
 
       - name: Sync node version
         uses: actions/setup-node@v4
