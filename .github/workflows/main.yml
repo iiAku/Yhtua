@@ -46,8 +46,14 @@ jobs:
         with:
           node-version: "20.11.1"
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v1
+
       - name: Install frontend dependencies
-        run: npm install
+        run: bun install
+
+      - name: Install Tauri CLI
+        run: bun add -g @tauri-apps/cli
 
       - name: Build the app (unsigned)
         uses: tauri-apps/tauri-action@v0
