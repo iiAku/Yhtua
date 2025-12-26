@@ -96,7 +96,7 @@ const addToken = async ({
 
   try {
     const token: Token = await createNewToken(
-      validParams.data.secret.toUpperCase(),
+      validParams.data.secret,
       validParams.data.label,
       validParams.data.digits,
     )

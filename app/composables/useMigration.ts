@@ -4,6 +4,7 @@ import { CURRENT_STORE_VERSION, getStoreVersion, StoreVersion, store, type Token
 export interface MigrationResult {
   migrated: boolean
   tokensEncrypted: number
+  failedTokenIds: string[]
   error?: string
 }
 
@@ -15,7 +16,7 @@ export const hasPlaintextSecrets = (): boolean =>
 export const migrateToEncryptedStore = async (): Promise<MigrationResult> => {
   try {
     if (getStoreVersion() >= CURRENT_STORE_VERSION && !hasPlaintextSecrets()) {
-      return { migrated: false, tokensEncrypted: 0 }
+      return { migrated: false, tokensEncrypted: 0, failedTokenIds: [] }
     }
 
     await initializeEncryption()
@@ -25,12 +26,14 @@ export const migrateToEncryptedStore = async (): Promise<MigrationResult> => {
       return {
         migrated: false,
         tokensEncrypted: 0,
+        failedTokenIds: [],
         error: 'Failed to initialize encryption',
       }
     }
 
     const currentTokens = store.getState().tokens
     let encryptedCount = 0
+    const failedTokenIds: string[] = []
 
     const migratedTokens: Token[] = await Promise.all(
       currentTokens.map(async (token) => {
@@ -52,6 +55,7 @@ export const migrateToEncryptedStore = async (): Promise<MigrationResult> => {
           }
         } catch (error) {
           console.error(`Failed to encrypt token ${token.id}:`, error)
+          failedTokenIds.push(token.id)
           return token
         }
       }),
@@ -62,15 +66,24 @@ export const migrateToEncryptedStore = async (): Promise<MigrationResult> => {
       tokens: migratedTokens,
     })
 
+    if (failedTokenIds.length > 0) {
+      console.warn(
+        `Migration completed with ${failedTokenIds.length} failed tokens:`,
+        failedTokenIds,
+      )
+    }
+
     return {
       migrated: true,
       tokensEncrypted: encryptedCount,
+      failedTokenIds,
     }
   } catch (error) {
     console.error('Migration failed:', error)
     return {
       migrated: false,
       tokensEncrypted: 0,
+      failedTokenIds: [],
       error: error instanceof Error ? error.message : 'Unknown error',
     }
   }

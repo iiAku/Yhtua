@@ -21,6 +21,18 @@ import { getTokens, replaceAllTokens, storeAddToken, type Token } from './useSto
 const BACKUP_FILENAME = 'yhtua_backup.json'
 const SYNC_DEBOUNCE_MS = 3000
 const FILE_WATCH_INTERVAL_MS = 10000
+const SYNC_VERSION = '2.1.0'
+
+export enum SyncErrorCode {
+  None = 'none',
+  NotConfigured = 'not_configured',
+  PathNotConfigured = 'path_not_configured',
+  PasswordNotConfigured = 'password_not_configured',
+  NoBackupFile = 'no_backup_file',
+  InvalidFormat = 'invalid_format',
+  WrongPassword = 'wrong_password',
+  Unknown = 'unknown',
+}
 
 export interface SyncStatus {
   enabled: boolean
@@ -35,6 +47,7 @@ export interface SyncStatus {
 export interface SyncResult {
   success: boolean
   message: string
+  errorCode?: SyncErrorCode
   tokensCount?: number
 }
 
@@ -60,7 +73,9 @@ const getSyncMetadata = (): SyncMetadata => {
     if (stored) {
       return JSON.parse(stored)
     }
-  } catch {}
+  } catch (error) {
+    console.warn('Failed to read sync metadata:', error)
+  }
   return { lastSync: null, lastKnownFileVersion: null, autoSync: true, passwordMismatch: false }
 }
 
@@ -76,7 +91,9 @@ export const getSyncStatus = async (): Promise<SyncStatus> => {
   if (hasPath) {
     try {
       syncPath = await getSyncPath()
-    } catch {}
+    } catch (error) {
+      console.warn('Failed to get sync path:', error)
+    }
   }
 
   return {
@@ -97,7 +114,7 @@ export const configureSyncPath = async (): Promise<string | null> => {
     title: 'Select Sync Folder',
   })
 
-  if (selectedPath && typeof selectedPath === 'string') {
+  if (selectedPath) {
     await storeSyncPath(selectedPath)
     return selectedPath
   }
@@ -120,7 +137,11 @@ export const syncToFile = async (): Promise<SyncResult> => {
     const status = await getSyncStatus()
 
     if (!status.enabled) {
-      return { success: false, message: 'Sync not configured' }
+      return {
+        success: false,
+        message: 'Sync not configured',
+        errorCode: SyncErrorCode.NotConfigured,
+      }
     }
 
     const syncPath = await getSyncPath()
@@ -145,7 +166,7 @@ export const syncToFile = async (): Promise<SyncResult> => {
     )
 
     const backupData = {
-      version: '2.1.0',
+      version: SYNC_VERSION,
       encrypted: false,
       tokens: decryptedTokens,
     }
@@ -154,7 +175,7 @@ export const syncToFile = async (): Promise<SyncResult> => {
 
     const syncedAt = Date.now()
     const syncBackup = {
-      version: '2.1.0',
+      version: SYNC_VERSION,
       encrypted: true,
       syncedAt,
       data: encryptedData,
@@ -174,6 +195,7 @@ export const syncToFile = async (): Promise<SyncResult> => {
     return {
       success: false,
       message: error instanceof Error ? error.message : 'Sync failed',
+      errorCode: SyncErrorCode.Unknown,
     }
   }
 }
@@ -183,11 +205,19 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
     const status = await getSyncStatus()
 
     if (!status.syncPath) {
-      return { success: false, message: 'Sync path not configured' }
+      return {
+        success: false,
+        message: 'Sync path not configured',
+        errorCode: SyncErrorCode.PathNotConfigured,
+      }
     }
 
     if (!status.hasPassword) {
-      return { success: false, message: 'Sync password not configured' }
+      return {
+        success: false,
+        message: 'Sync password not configured',
+        errorCode: SyncErrorCode.PasswordNotConfigured,
+      }
     }
 
     const password = await getSyncPassword()
@@ -195,14 +225,22 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
 
     const fileExists = await exists(filePath)
     if (!fileExists) {
-      return { success: false, message: 'No backup file found' }
+      return {
+        success: false,
+        message: 'No backup file found',
+        errorCode: SyncErrorCode.NoBackupFile,
+      }
     }
 
     const content = await readTextFile(filePath)
     const parsed = syncBackupSchema.safeParse(JSON.parse(content))
 
     if (!parsed.success) {
-      return { success: false, message: 'Invalid backup file format' }
+      return {
+        success: false,
+        message: 'Invalid backup file format',
+        errorCode: SyncErrorCode.InvalidFormat,
+      }
     }
 
     let decryptedData: { tokens: Token[] }
@@ -210,7 +248,11 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       const decryptedJson = await decryptWithPassword(parsed.data.data, password)
       decryptedData = JSON.parse(decryptedJson)
     } catch {
-      return { success: false, message: 'Wrong password or corrupted file' }
+      return {
+        success: false,
+        message: 'Wrong password or corrupted file',
+        errorCode: SyncErrorCode.WrongPassword,
+      }
     }
 
     const reEncryptedTokens = await Promise.all(
@@ -242,6 +284,7 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
     return {
       success: false,
       message: error instanceof Error ? error.message : 'Restore failed',
+      errorCode: SyncErrorCode.Unknown,
     }
   }
 }
@@ -253,7 +296,8 @@ export const hasBackupFile = async (): Promise<boolean> => {
 
     const filePath = await getBackupFilePath()
     return await exists(filePath)
-  } catch {
+  } catch (error) {
+    console.warn('Failed to check backup file:', error)
     return false
   }
 }
@@ -291,14 +335,16 @@ export const getBackupInfo = async (): Promise<{
         syncedAt: parsed.data.syncedAt,
         tokensCount: decryptedData.tokens?.length ?? null,
       }
-    } catch {
+    } catch (error) {
+      console.warn('Failed to decrypt backup info:', error)
       return {
         exists: true,
         syncedAt: parsed.data.syncedAt,
         tokensCount: null,
       }
     }
-  } catch {
+  } catch (error) {
+    console.warn('Failed to get backup info:', error)
     return null
   }
 }
@@ -306,11 +352,15 @@ export const getBackupInfo = async (): Promise<{
 export const disableSync = async (): Promise<void> => {
   try {
     await deleteSyncPath()
-  } catch {}
+  } catch (error) {
+    console.warn('Failed to delete sync path:', error)
+  }
 
   try {
     await deleteSyncPassword()
-  } catch {}
+  } catch (error) {
+    console.warn('Failed to delete sync password:', error)
+  }
 
   localStorage.removeItem(SYNC_METADATA_KEY)
 }
@@ -416,7 +466,8 @@ const getFileSyncedAt = async (): Promise<number | null> => {
     const parsed = syncBackupSchema.safeParse(JSON.parse(content))
 
     return parsed.success ? parsed.data.syncedAt : null
-  } catch {
+  } catch (error) {
+    console.warn('Failed to get file synced at:', error)
     return null
   }
 }
@@ -452,7 +503,7 @@ export const syncFromRemoteIfNeeded = async (): Promise<SyncResult | null> => {
 
     const result = await restoreFromFile(true)
 
-    if (!result.success && result.message === 'Wrong password or corrupted file') {
+    if (!result.success && result.errorCode === SyncErrorCode.WrongPassword) {
       setSyncMetadata({ passwordMismatch: true })
       if (passwordMismatchCallback && remoteVersion) {
         passwordMismatchCallback(remoteVersion)

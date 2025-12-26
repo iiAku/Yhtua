@@ -89,12 +89,11 @@ const closeModal = async (_type: string, response: boolean) => {
 
 const setDigit = (newDigit: number) => (token.value!.otp.digits = newDigit)
 
-const saveToken = async (token: Token) => {
-  const existingToken = getTokens().find((t) => t.id === token.id)
-  if (!existingToken) return
-
-  existingToken.otp.label = token.otp.label
-  existingToken.otp.digits = token.otp.digits
+const saveToken = async (tokenToSave: Token) => {
+  updateTokenOtp(tokenToSave.id, {
+    label: tokenToSave.otp.label,
+    digits: tokenToSave.otp.digits,
+  })
 
   await useShowNotification(notification, {
     text: 'Changes saved',

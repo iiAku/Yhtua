@@ -132,10 +132,20 @@ export const importTokensEncrypted = async (
         const decryptedJson = await decryptWithPassword(encryptedResult.data.data, password)
         const decryptedData = JSON.parse(decryptedJson)
 
+        const validationResult = exportImportSchema.safeParse(decryptedData)
+        if (!validationResult.success) {
+          await useShowNotification(notification, {
+            text: 'Invalid backup data structure',
+            delay: 2000,
+            type: NotificationType.Danger,
+          })
+          return false
+        }
+
         await initializeEncryption()
 
         const reEncryptedTokens = await Promise.all(
-          decryptedData.tokens.map(async (token: Token) => ({
+          validationResult.data.tokens.map(async (token: Token) => ({
             ...token,
             otp: {
               ...token.otp,
@@ -215,7 +225,7 @@ export const importTokensEncrypted = async (
 
 export const exportTokens = async (notification: Ref<AppNotification>) => {
   try {
-    const filename = 'ythua_export_token.json'
+    const filename = 'yhtua_export_token.json'
     const downloadPath = await downloadDir()
 
     const saveFilePath = await save({

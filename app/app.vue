@@ -15,6 +15,7 @@ import {
 } from '~/composables/useSync'
 
 const migrating = ref(false)
+let unsubscribeStore: (() => void) | null = null
 
 onMounted(async () => {
   cleanupInvalidTokens()
@@ -35,7 +36,7 @@ onMounted(async () => {
 
   let previousTokens = JSON.stringify(store.getState().tokens)
 
-  store.subscribe(async (state) => {
+  unsubscribeStore = store.subscribe(async (state) => {
     const currentTokens = JSON.stringify(state.tokens)
     if (currentTokens !== previousTokens) {
       previousTokens = currentTokens
@@ -50,5 +51,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopFileWatcher()
+  unsubscribeStore?.()
 })
 </script>

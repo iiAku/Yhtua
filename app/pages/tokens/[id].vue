@@ -118,11 +118,6 @@ onMounted(async () => {
     updateTokenLastUsed(token.value.id)
     await updateToken(token.value)
 
-    await nextTick()
-    if (renderedToken.value) {
-      await copy()
-    }
-
     intervalId = setInterval(async () => {
       renderedToken.remainingTime = getRemainingTime(time.value)
       if (token.value && [1, DEFAULT_PERIOD].includes(renderedToken.remainingTime)) {

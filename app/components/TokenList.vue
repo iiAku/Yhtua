@@ -51,13 +51,12 @@
 <script setup lang="ts">
 import { ChevronRightIcon, PlusIcon, ShieldCheckIcon } from '@heroicons/vue/24/outline'
 
-const tokens: Token[] = getTokens()
-
 const props = defineProps<{
   searchQuery?: string
 }>()
 
 const filteredTokens = computed(() => {
+  const tokens = getTokens()
   if (!props.searchQuery) {
     return tokens
   }

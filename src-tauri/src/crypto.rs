@@ -14,7 +14,7 @@ const KEYCHAIN_SERVICE: &str = "yhtua";
 const KEYCHAIN_KEY_NAME: &str = "encryption-key";
 const KEYCHAIN_SYNC_PASSWORD: &str = "sync-password";
 const KEYCHAIN_SYNC_PATH: &str = "sync-path";
-const PBKDF2_ITERATIONS: u32 = 100_000;
+const PBKDF2_ITERATIONS: u32 = 600_000;
 const SALT_LEN: usize = 16;
 const KEY_LEN: usize = 32;
 
