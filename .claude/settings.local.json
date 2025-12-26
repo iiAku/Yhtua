@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bunx nuxi@latest init:*)",
+      "Bash(cat:*)",
+      "Bash(bun install:*)",
+      "Bash(bun add:*)",
+      "Bash(bunx tailwindcss:*)",
+      "Bash(bun remove:*)",
+      "Bash(timeout 15 bun run dev:*)",
+      "Bash(bunx tauri init:*)",
+      "Bash(LD_PRELOAD=/usr/lib/libwayland-client.so timeout 60 bun run tauri dev:*)",
+      "Bash(LD_PRELOAD=/usr/lib/libwayland-client.so timeout 120 bun run tauri dev:*)",
+      "Bash(LD_PRELOAD=/usr/lib/libwayland-client.so timeout 90 bun run tauri dev:*)",
+      "Bash(timeout 30 bun run dev:*)",
+      "Bash(cargo search:*)"
+    ]
+  }
+}

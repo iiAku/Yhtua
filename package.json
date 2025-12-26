@@ -1,10 +1,11 @@
 {
-  "name": "nuxt-app",
-  "private": true,
+  "name": "Yhtua",
+  "version": "2.0.0",
+  "description": "Yhtua - Open Source 2FA Token Manager",
+  "author": "Yoann Gendrey",
+  "license": "MIT",
   "type": "module",
-  "author": {
-    "name": "Yoann Gendrey"
-  },
+  "private": true,
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev",
@@ -14,20 +15,22 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@headlessui/vue": "^1.7.19",
-    "@heroicons/vue": "^2.1.1",
-    "@tauri-apps/api": "^1.5.3",
-    "@tauri-apps/cli": "^1.5.10",
-    "nuxt": "^3.10.3",
-    "otpauth": "^9.2.2",
-    "vue": "^3.4.21",
-    "vue-router": "^4.3.0",
-    "zod": "^3.22.4",
-    "zustand": "^4.5.2"
+    "@headlessui/vue": "^1.7.23",
+    "@heroicons/vue": "^2.2.0",
+    "@tauri-apps/api": "^2.9.1",
+    "@tauri-apps/plugin-dialog": "^2.4.2",
+    "@tauri-apps/plugin-fs": "^2.4.4",
+    "nuxt": "^4.2.2",
+    "otpauth": "^9.4.1",
+    "vue": "^3.5.26",
+    "vue-router": "^4.6.4",
+    "zod": "^4.2.1",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
-    "autoprefixer": "^10.4.18",
-    "postcss": "^8.4.35",
-    "tailwindcss": "^3.4.1"
+    "@tauri-apps/cli": "^2.9.6",
+    "autoprefixer": "^10.4.23",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.0"
   }
 }
