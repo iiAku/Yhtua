@@ -60,7 +60,7 @@
 
 Yhtua takes security seriously:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Local Storage                            │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐  │
@@ -91,7 +91,7 @@ Yhtua takes security seriously:
 ```
 
 - **Local secrets**: Encrypted with a key stored in your OS keychain (macOS Keychain, Windows Credential Manager, or Linux Secret Service/file fallback)
-- **Backup files**: Encrypted with your password using PBKDF2 (100,000 iterations) + AES-256-GCM
+- **Backup files**: Encrypted with your password using PBKDF2 (600,000 iterations) + AES-256-GCM
 - **No network**: Yhtua never sends your data anywhere — sync works via local files
 
 ## Installation
@@ -140,7 +140,7 @@ bun run tauri build
 
 ### Project Structure
 
-```
+```text
 Yhtua/
 ├── app/                    # Nuxt frontend
 │   ├── components/         # Vue components

@@ -124,6 +124,15 @@ fn write_fallback_credentials(creds: &FallbackCredentials) -> Result<(), CryptoE
         let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
     }
 
+    #[cfg(windows)]
+    {
+        // Mark file as hidden on Windows for additional protection
+        // The file is already in AppData\Local which has user-only access by default
+        let _ = std::process::Command::new("attrib")
+            .args(["+H", path.to_str().unwrap_or("")])
+            .output();
+    }
+
     Ok(())
 }
 
