@@ -25,7 +25,8 @@
 
       <div class="space-y-3">
         <input
-          v-model="token!.otp.label"
+          v-if="token"
+          v-model="token.otp.label"
           class="w-full rounded-lg border-0 bg-gray-800 px-3 py-2 text-white text-sm placeholder:text-gray-500 ring-1 ring-inset ring-gray-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500"
           placeholder="Token name"
         />
@@ -33,9 +34,10 @@
         <TokenLength @digitSelected="setDigit" />
 
         <button
+          v-if="token"
           type="button"
           class="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-          @click="saveToken(token!)"
+          @click="saveToken(token)"
         >
           Save Changes
         </button>
@@ -67,6 +69,10 @@ const route = useRoute()
 
 const token = ref<Token | undefined>(getTokens().find((token) => token.id === route.params.id))
 
+if (!token.value) {
+  navigateTo('/')
+}
+
 const notification = useNotification()
 
 const modal = useModal()
@@ -82,12 +88,16 @@ const showRemoveDialogue = () =>
 
 const closeModal = async (_type: string, response: boolean) => {
   modal.value.Danger.open = false
-  if (response) {
-    await deleteToken(token.value!)
+  if (response && token.value) {
+    await deleteToken(token.value)
   }
 }
 
-const setDigit = (newDigit: number) => (token.value!.otp.digits = newDigit)
+const setDigit = (newDigit: number) => {
+  if (token.value) {
+    token.value.otp.digits = newDigit
+  }
+}
 
 const saveToken = async (tokenToSave: Token) => {
   updateTokenOtp(tokenToSave.id, {

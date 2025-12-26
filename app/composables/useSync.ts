@@ -16,7 +16,13 @@ import {
   storeSyncPassword,
   storeSyncPath,
 } from './useCrypto'
-import { getTokens, replaceAllTokens, storeAddToken, type Token } from './useStore'
+import {
+  exportImportSchema,
+  getTokens,
+  replaceAllTokens,
+  storeAddToken,
+  type Token,
+} from './useStore'
 
 const BACKUP_FILENAME = 'yhtua_backup.json'
 const SYNC_DEBOUNCE_MS = 3000
@@ -255,8 +261,17 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       }
     }
 
+    const validationResult = exportImportSchema.safeParse(decryptedData)
+    if (!validationResult.success) {
+      return {
+        success: false,
+        message: 'Invalid backup data structure',
+        errorCode: SyncErrorCode.InvalidFormat,
+      }
+    }
+
     const reEncryptedTokens = await Promise.all(
-      decryptedData.tokens.map(async (token: Token) => ({
+      validationResult.data.tokens.map(async (token: Token) => ({
         ...token,
         otp: {
           ...token.otp,
@@ -421,13 +436,22 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
       const decryptedJson = await decryptWithPassword(parsed.data.data, password)
       decryptedData = JSON.parse(decryptedJson)
     } catch {
-      return { success: false, message: 'Wrong password' }
+      return { success: false, message: 'Wrong password', errorCode: SyncErrorCode.WrongPassword }
+    }
+
+    const validationResult = exportImportSchema.safeParse(decryptedData)
+    if (!validationResult.success) {
+      return {
+        success: false,
+        message: 'Invalid backup data structure',
+        errorCode: SyncErrorCode.InvalidFormat,
+      }
     }
 
     await storeSyncPassword(password)
 
     const reEncryptedTokens = await Promise.all(
-      decryptedData.tokens.map(async (token: Token) => ({
+      validationResult.data.tokens.map(async (token: Token) => ({
         ...token,
         otp: {
           ...token.otp,

@@ -35,10 +35,16 @@
 
       <div class="h-5 -mt-2 mb-4">
         <p
-          class="text-green-400 text-sm font-medium text-center transition-opacity duration-200"
-          :class="copied ? 'opacity-100' : 'opacity-0'"
+          v-if="copied"
+          class="text-green-400 text-sm font-medium text-center"
         >
           Copied to clipboard!
+        </p>
+        <p
+          v-else-if="copyError"
+          class="text-red-400 text-sm font-medium text-center"
+        >
+          Failed to copy
         </p>
       </div>
 
@@ -71,6 +77,7 @@ const route = useRoute()
 
 const time = ref(DEFAULT_PERIOD)
 const copied = ref(false)
+const copyError = ref(false)
 
 const token = ref<Token | undefined>(
   store.getState().tokens.find((token) => token.id === route.params.id),
@@ -105,11 +112,14 @@ const copy = async () => {
   try {
     await writeText(renderedToken.value)
     copied.value = true
-    setTimeout(() => {
-      copied.value = false
-    }, 2000)
+    copyError.value = false
+    await useSleep(2000)
+    copied.value = false
   } catch (error) {
     console.error('Failed to copy:', error)
+    copyError.value = true
+    await useSleep(2000)
+    copyError.value = false
   }
 }
 
