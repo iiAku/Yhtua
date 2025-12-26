@@ -1,54 +1,55 @@
 <template>
-  <div class="bg-gray-900 h-screen overflow-hidden">
+  <div class="bg-gray-900 h-screen flex flex-col overflow-hidden">
     <Navbar />
-    <div class="relative isolate overflow-hidden px-6 py-12">
-      <h2
-        class="mx-auto max-w-2xl text-center text-3xl font-bold tracking-tight text-white"
-      >
-        Add a new 2FA Token
-      </h2>
-      <p
-        class="mx-auto mt-2 max-w-xl text-center text-lg leading-8 text-gray-300"
-      >
-        You can add a new 2-Factor Authentication Token accounts using Yhtua.
-        You can add accounts by entering the code provided by the service in
-        which you want to enable 2FA.
-      </p>
+    <div class="flex-1 overflow-y-auto px-4 py-4">
+      <div class="text-center mb-6">
+        <div class="w-14 h-14 rounded-full bg-indigo-600/20 flex items-center justify-center mx-auto mb-3">
+          <PlusCircleIcon class="h-7 w-7 text-indigo-400" />
+        </div>
+        <h2 class="text-xl font-bold tracking-tight text-white">
+          Add Token
+        </h2>
+        <p class="mt-1 text-xs leading-5 text-gray-400">
+          Enter the secret key from your service
+        </p>
+      </div>
 
-      <div class="flex-col w-full my-6 px-8">
+      <div class="space-y-3">
         <input
           v-model="token.label"
-          class="my-2 min-w-0 flex-auto rounded-md border-0 bg-white/5 px-3.5 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-white sm:text-sm sm:leading-6 w-full"
-          placeholder="Enter your new Token Name"
+          class="w-full rounded-lg border-0 bg-gray-800 px-3 py-2 text-white text-sm placeholder:text-gray-500 ring-1 ring-inset ring-gray-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+          placeholder="Token name (e.g. GitHub)"
         />
         <input
           v-model="token.secret"
           @input="token.secret = token.secret.toUpperCase()"
-          class="my-2 min-w-0 flex-auto rounded-md border-0 bg-white/5 px-3.5 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-white sm:text-sm sm:leading-6 w-full"
-          placeholder="Enter your token security code"
+          class="w-full rounded-lg border-0 bg-gray-800 px-3 py-2 text-white text-sm font-mono placeholder:text-gray-500 ring-1 ring-inset ring-gray-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+          placeholder="Secret key (e.g. JBSWY3DPEHPK3PXP)"
         />
-        <TokenLength class="my-2" @digitSelected="setDigit" />
+        <TokenLength @digitSelected="setDigit" />
         <button
           type="submit"
-          class="my-2 rounded-md bg-white px-3.5 py-2.5 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white w-full"
+          class="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
           @click="addToken(token)"
         >
           Add Token
         </button>
-        <div class="relative">
+
+        <div class="relative py-2">
           <div class="absolute inset-0 flex items-center" aria-hidden="true">
-            <div class="w-full border-t border-gray-300" />
+            <div class="w-full border-t border-gray-700" />
           </div>
           <div class="relative flex justify-center">
-            <span class="bg-gray-900 px-2 text-sm text-white">OR</span>
+            <span class="bg-gray-900 px-2 text-xs text-gray-500">or</span>
           </div>
         </div>
+
         <button
-          type="submit"
-          class="my-2 rounded-md bg-white px-3.5 py-2.5 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white w-full"
+          type="button"
+          class="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-300 shadow-sm hover:bg-gray-700 ring-1 ring-inset ring-gray-700"
           @click="createImportToken"
         >
-          Import Tokens from export
+          Import from backup
         </button>
       </div>
     </div>
@@ -61,9 +62,11 @@
 </template>
 
 <script setup lang="ts">
+import { PlusCircleIcon } from '@heroicons/vue/24/outline'
+
 const token = reactive({
-  label: "",
-  secret: "",
+  label: '',
+  secret: '',
   digits: DEFAULT_DIGITS,
 })
 
@@ -91,14 +94,21 @@ const addToken = async ({
     })
   }
 
-  const token: Token = createNewToken(
-    validParams.data.secret.toUpperCase(),
-    validParams.data.label,
-    validParams.data.digits
-  )
+  try {
+    const token: Token = await createNewToken(
+      validParams.data.secret,
+      validParams.data.label,
+      validParams.data.digits,
+    )
 
-  storeAddToken(token)
+    storeAddToken(token)
 
-  navigateTo(`/tokens/${token.id}`)
+    navigateTo(`/tokens/${token.id}`)
+  } catch (error) {
+    return useShowNotification(notification, {
+      text: 'Failed to create token',
+      type: NotificationType.Danger,
+    })
+  }
 }
 </script>

@@ -1,0 +1,594 @@
+import { join } from '@tauri-apps/api/path'
+import { open } from '@tauri-apps/plugin-dialog'
+import { exists, mkdir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import { z } from 'zod'
+import {
+  decryptSecret,
+  decryptWithPassword,
+  deleteSyncPassword,
+  deleteSyncPath,
+  encryptSecret,
+  encryptWithPassword,
+  getSyncPassword,
+  getSyncPath,
+  hasSyncPassword,
+  hasSyncPath,
+  storeSyncPassword,
+  storeSyncPath,
+} from './useCrypto'
+import {
+  exportImportSchema,
+  getTokens,
+  replaceAllTokens,
+  storeAddToken,
+  type Token,
+} from './useStore'
+
+const BACKUP_FILENAME = 'yhtua_backup.json'
+const SYNC_DEBOUNCE_MS = 3000
+const FILE_WATCH_INTERVAL_MS = 10000
+const SYNC_VERSION = '2.1.0'
+const STATUS_CACHE_TTL_MS = 5000
+
+let cachedStatus: SyncStatus | null = null
+let statusCacheTime = 0
+
+const invalidateStatusCache = () => {
+  cachedStatus = null
+  statusCacheTime = 0
+}
+
+export enum SyncErrorCode {
+  None = 'none',
+  NotConfigured = 'not_configured',
+  PathNotConfigured = 'path_not_configured',
+  PasswordNotConfigured = 'password_not_configured',
+  NoBackupFile = 'no_backup_file',
+  InvalidFormat = 'invalid_format',
+  WrongPassword = 'wrong_password',
+  Unknown = 'unknown',
+}
+
+export interface SyncStatus {
+  enabled: boolean
+  syncPath: string | null
+  hasPassword: boolean
+  lastSync: number | null
+  lastKnownFileVersion: number | null
+  autoSync: boolean
+  passwordMismatch: boolean
+}
+
+export interface SyncResult {
+  success: boolean
+  message: string
+  errorCode?: SyncErrorCode
+  tokensCount?: number
+}
+
+const syncBackupSchema = z.object({
+  version: z.string(),
+  encrypted: z.literal(true),
+  syncedAt: z.number(),
+  data: z.string(),
+})
+
+const SYNC_METADATA_KEY = 'yhtua_sync_metadata'
+
+interface SyncMetadata {
+  lastSync: number | null
+  lastKnownFileVersion: number | null
+  autoSync: boolean
+  passwordMismatch: boolean
+}
+
+const getSyncMetadata = (): SyncMetadata => {
+  try {
+    const stored = localStorage.getItem(SYNC_METADATA_KEY)
+    if (stored) {
+      return JSON.parse(stored)
+    }
+  } catch (error) {
+    console.warn('Failed to read sync metadata:', error)
+  }
+  return { lastSync: null, lastKnownFileVersion: null, autoSync: true, passwordMismatch: false }
+}
+
+const setSyncMetadata = (metadata: Partial<SyncMetadata>) =>
+  localStorage.setItem(SYNC_METADATA_KEY, JSON.stringify({ ...getSyncMetadata(), ...metadata }))
+
+export const getSyncStatus = async (forceRefresh = false): Promise<SyncStatus> => {
+  const now = Date.now()
+  if (!forceRefresh && cachedStatus && now - statusCacheTime < STATUS_CACHE_TTL_MS) {
+    return cachedStatus
+  }
+
+  const [hasPath, hasPass] = await Promise.all([hasSyncPath(), hasSyncPassword()])
+  const metadata = getSyncMetadata()
+
+  let syncPath: string | null = null
+  if (hasPath) {
+    try {
+      syncPath = await getSyncPath()
+    } catch (error) {
+      console.warn('Failed to get sync path:', error)
+    }
+  }
+
+  cachedStatus = {
+    enabled: hasPath && hasPass,
+    syncPath,
+    hasPassword: hasPass,
+    lastSync: metadata.lastSync,
+    lastKnownFileVersion: metadata.lastKnownFileVersion,
+    autoSync: metadata.autoSync,
+    passwordMismatch: metadata.passwordMismatch ?? false,
+  }
+  statusCacheTime = now
+
+  return cachedStatus
+}
+
+export const configureSyncPath = async (): Promise<string | null> => {
+  const selectedPath = await open({
+    directory: true,
+    multiple: false,
+    title: 'Select Sync Folder',
+  })
+
+  if (selectedPath) {
+    await storeSyncPath(selectedPath)
+    invalidateStatusCache()
+    return selectedPath
+  }
+
+  return null
+}
+
+export const configureSyncPassword = async (password: string): Promise<void> => {
+  await storeSyncPassword(password)
+  invalidateStatusCache()
+}
+
+export const setAutoSync = (enabled: boolean): void => setSyncMetadata({ autoSync: enabled })
+
+const getBackupFilePath = async (): Promise<string> => join(await getSyncPath(), BACKUP_FILENAME)
+
+const getPlaintextSecret = async (token: Token): Promise<string> =>
+  token.otp.encrypted ? decryptSecret(token.otp.secret) : token.otp.secret
+
+export const syncToFile = async (): Promise<SyncResult> => {
+  try {
+    const status = await getSyncStatus()
+
+    if (!status.enabled) {
+      return {
+        success: false,
+        message: 'Sync not configured',
+        errorCode: SyncErrorCode.NotConfigured,
+      }
+    }
+
+    const syncPath = await getSyncPath()
+    const password = await getSyncPassword()
+    const filePath = await getBackupFilePath()
+
+    const dirExists = await exists(syncPath)
+    if (!dirExists) {
+      await mkdir(syncPath, { recursive: true })
+    }
+
+    const tokens = getTokens()
+    const decryptedTokens = await Promise.all(
+      tokens.map(async (token) => ({
+        ...token,
+        otp: {
+          ...token.otp,
+          secret: await getPlaintextSecret(token),
+          encrypted: false,
+        },
+      })),
+    )
+
+    const backupData = {
+      version: SYNC_VERSION,
+      encrypted: false,
+      tokens: decryptedTokens,
+    }
+
+    const encryptedData = await encryptWithPassword(JSON.stringify(backupData), password)
+
+    const syncedAt = Date.now()
+    const syncBackup = {
+      version: SYNC_VERSION,
+      encrypted: true,
+      syncedAt,
+      data: encryptedData,
+    }
+
+    await writeTextFile(filePath, JSON.stringify(syncBackup, null, 2))
+
+    setSyncMetadata({ lastSync: syncedAt, lastKnownFileVersion: syncedAt, passwordMismatch: false })
+
+    return {
+      success: true,
+      message: 'Synced successfully',
+      tokensCount: tokens.length,
+    }
+  } catch (error) {
+    console.error('Sync to file failed:', error)
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Sync failed',
+      errorCode: SyncErrorCode.Unknown,
+    }
+  }
+}
+
+export const restoreFromFile = async (replaceExisting: boolean = true): Promise<SyncResult> => {
+  try {
+    const status = await getSyncStatus()
+
+    if (!status.syncPath) {
+      return {
+        success: false,
+        message: 'Sync path not configured',
+        errorCode: SyncErrorCode.PathNotConfigured,
+      }
+    }
+
+    if (!status.hasPassword) {
+      return {
+        success: false,
+        message: 'Sync password not configured',
+        errorCode: SyncErrorCode.PasswordNotConfigured,
+      }
+    }
+
+    const password = await getSyncPassword()
+    const filePath = await getBackupFilePath()
+
+    const fileExists = await exists(filePath)
+    if (!fileExists) {
+      return {
+        success: false,
+        message: 'No backup file found',
+        errorCode: SyncErrorCode.NoBackupFile,
+      }
+    }
+
+    const content = await readTextFile(filePath)
+    const parsed = syncBackupSchema.safeParse(JSON.parse(content))
+
+    if (!parsed.success) {
+      return {
+        success: false,
+        message: 'Invalid backup file format',
+        errorCode: SyncErrorCode.InvalidFormat,
+      }
+    }
+
+    let decryptedData: { tokens: Token[] }
+    try {
+      const decryptedJson = await decryptWithPassword(parsed.data.data, password)
+      decryptedData = JSON.parse(decryptedJson)
+    } catch {
+      return {
+        success: false,
+        message: 'Wrong password or corrupted file',
+        errorCode: SyncErrorCode.WrongPassword,
+      }
+    }
+
+    const validationResult = exportImportSchema.safeParse(decryptedData)
+    if (!validationResult.success) {
+      return {
+        success: false,
+        message: 'Invalid backup data structure',
+        errorCode: SyncErrorCode.InvalidFormat,
+      }
+    }
+
+    const reEncryptedTokens = await Promise.all(
+      validationResult.data.tokens.map(async (token: Token) => ({
+        ...token,
+        otp: {
+          ...token.otp,
+          secret: await encryptSecret(token.otp.secret),
+          encrypted: true,
+        },
+      })),
+    )
+
+    if (replaceExisting) {
+      replaceAllTokens(reEncryptedTokens)
+    } else {
+      storeAddToken(reEncryptedTokens)
+    }
+
+    setSyncMetadata({ lastKnownFileVersion: parsed.data.syncedAt })
+
+    return {
+      success: true,
+      message: 'Restored successfully',
+      tokensCount: reEncryptedTokens.length,
+    }
+  } catch (error) {
+    console.error('Restore from file failed:', error)
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Restore failed',
+      errorCode: SyncErrorCode.Unknown,
+    }
+  }
+}
+
+export const hasBackupFile = async (): Promise<boolean> => {
+  try {
+    const status = await getSyncStatus()
+    if (!status.syncPath) return false
+
+    const filePath = await getBackupFilePath()
+    return await exists(filePath)
+  } catch (error) {
+    console.warn('Failed to check backup file:', error)
+    return false
+  }
+}
+
+export const getBackupInfo = async (
+  status?: SyncStatus,
+): Promise<{
+  exists: boolean
+  syncedAt: number | null
+  tokensCount: number | null
+} | null> => {
+  try {
+    const syncStatus = status ?? (await getSyncStatus())
+    if (!syncStatus.syncPath || !syncStatus.hasPassword) return null
+
+    const filePath = await getBackupFilePath()
+    const fileExists = await exists(filePath)
+
+    if (!fileExists) {
+      return { exists: false, syncedAt: null, tokensCount: null }
+    }
+
+    const content = await readTextFile(filePath)
+    const parsed = syncBackupSchema.safeParse(JSON.parse(content))
+
+    if (!parsed.success) {
+      return { exists: true, syncedAt: null, tokensCount: null }
+    }
+
+    try {
+      const password = await getSyncPassword()
+      const decryptedJson = await decryptWithPassword(parsed.data.data, password)
+      const decryptedData = JSON.parse(decryptedJson)
+
+      return {
+        exists: true,
+        syncedAt: parsed.data.syncedAt,
+        tokensCount: decryptedData.tokens?.length ?? null,
+      }
+    } catch (error) {
+      console.warn('Failed to decrypt backup info:', error)
+      return {
+        exists: true,
+        syncedAt: parsed.data.syncedAt,
+        tokensCount: null,
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to get backup info:', error)
+    return null
+  }
+}
+
+export const disableSync = async (): Promise<void> => {
+  try {
+    await deleteSyncPath()
+  } catch (error) {
+    console.warn('Failed to delete sync path:', error)
+  }
+
+  try {
+    await deleteSyncPassword()
+  } catch (error) {
+    console.warn('Failed to delete sync password:', error)
+  }
+
+  localStorage.removeItem(SYNC_METADATA_KEY)
+  invalidateStatusCache()
+}
+
+let syncTimeout: NodeJS.Timeout | null = null
+
+export const triggerDebouncedSync = () => {
+  if (syncTimeout) {
+    clearTimeout(syncTimeout)
+  }
+
+  syncTimeout = setTimeout(async () => {
+    const status = await getSyncStatus()
+    if (status.enabled && status.autoSync) {
+      await syncToFile()
+    }
+  }, SYNC_DEBOUNCE_MS)
+}
+
+export const cancelPendingSync = () => {
+  if (syncTimeout) {
+    clearTimeout(syncTimeout)
+    syncTimeout = null
+  }
+}
+
+let fileWatchInterval: NodeJS.Timeout | null = null
+let isCheckingForUpdates = false
+
+let passwordMismatchCallback: ((remoteVersion: number) => void) | null = null
+
+export const onPasswordMismatch = (callback: ((remoteVersion: number) => void) | null) => {
+  passwordMismatchCallback = callback
+}
+
+export const tryRestoreWithPassword = async (password: string): Promise<SyncResult> => {
+  try {
+    const status = await getSyncStatus()
+    if (!status.syncPath) {
+      return { success: false, message: 'Sync path not configured' }
+    }
+
+    const filePath = await getBackupFilePath()
+    const fileExists = await exists(filePath)
+    if (!fileExists) {
+      return { success: false, message: 'No backup file found' }
+    }
+
+    const content = await readTextFile(filePath)
+    const parsed = syncBackupSchema.safeParse(JSON.parse(content))
+
+    if (!parsed.success) {
+      return { success: false, message: 'Invalid backup file format' }
+    }
+
+    let decryptedData: { tokens: Token[] }
+    try {
+      const decryptedJson = await decryptWithPassword(parsed.data.data, password)
+      decryptedData = JSON.parse(decryptedJson)
+    } catch {
+      return { success: false, message: 'Wrong password', errorCode: SyncErrorCode.WrongPassword }
+    }
+
+    const validationResult = exportImportSchema.safeParse(decryptedData)
+    if (!validationResult.success) {
+      return {
+        success: false,
+        message: 'Invalid backup data structure',
+        errorCode: SyncErrorCode.InvalidFormat,
+      }
+    }
+
+    await storeSyncPassword(password)
+
+    const reEncryptedTokens = await Promise.all(
+      validationResult.data.tokens.map(async (token: Token) => ({
+        ...token,
+        otp: {
+          ...token.otp,
+          secret: await encryptSecret(token.otp.secret),
+          encrypted: true,
+        },
+      })),
+    )
+
+    replaceAllTokens(reEncryptedTokens)
+    setSyncMetadata({ lastKnownFileVersion: parsed.data.syncedAt, passwordMismatch: false })
+
+    return {
+      success: true,
+      message: 'Restored successfully with new password',
+      tokensCount: reEncryptedTokens.length,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Restore failed',
+    }
+  }
+}
+
+const getFileSyncedAt = async (): Promise<number | null> => {
+  try {
+    const status = await getSyncStatus()
+    if (!status.syncPath) return null
+
+    const filePath = await getBackupFilePath()
+    const fileExists = await exists(filePath)
+    if (!fileExists) return null
+
+    const content = await readTextFile(filePath)
+    const parsed = syncBackupSchema.safeParse(JSON.parse(content))
+
+    return parsed.success ? parsed.data.syncedAt : null
+  } catch (error) {
+    console.warn('Failed to get file synced at:', error)
+    return null
+  }
+}
+
+export const checkForRemoteUpdates = async (): Promise<{
+  hasUpdates: boolean
+  remoteVersion: number | null
+  localVersion: number | null
+}> => {
+  const metadata = getSyncMetadata()
+  const remoteVersion = await getFileSyncedAt()
+
+  return {
+    hasUpdates:
+      remoteVersion !== null &&
+      metadata.lastKnownFileVersion !== null &&
+      remoteVersion > metadata.lastKnownFileVersion,
+    remoteVersion,
+    localVersion: metadata.lastKnownFileVersion,
+  }
+}
+
+export const syncFromRemoteIfNeeded = async (): Promise<SyncResult | null> => {
+  if (isCheckingForUpdates) return null
+  isCheckingForUpdates = true
+
+  try {
+    const status = await getSyncStatus()
+    if (!status.enabled || !status.autoSync) return null
+
+    const { hasUpdates, remoteVersion } = await checkForRemoteUpdates()
+    if (!hasUpdates) return null
+
+    const result = await restoreFromFile(true)
+
+    if (!result.success && result.errorCode === SyncErrorCode.WrongPassword) {
+      setSyncMetadata({ passwordMismatch: true })
+      if (passwordMismatchCallback && remoteVersion) {
+        passwordMismatchCallback(remoteVersion)
+      }
+      stopFileWatcher()
+    }
+
+    return result
+  } catch (error) {
+    console.error('Failed to sync from remote:', error)
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Sync failed',
+    }
+  } finally {
+    isCheckingForUpdates = false
+  }
+}
+
+export const startFileWatcher = () => {
+  if (fileWatchInterval) return
+
+  fileWatchInterval = setInterval(async () => {
+    await syncFromRemoteIfNeeded()
+  }, FILE_WATCH_INTERVAL_MS)
+
+  syncFromRemoteIfNeeded()
+}
+
+export const stopFileWatcher = () => {
+  if (fileWatchInterval) {
+    clearInterval(fileWatchInterval)
+    fileWatchInterval = null
+  }
+}
+
+export const initFileWatcher = async () => {
+  const status = await getSyncStatus()
+  if (status.enabled && status.autoSync) {
+    startFileWatcher()
+  }
+}

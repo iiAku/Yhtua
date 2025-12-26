@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-gray-900 h-screen overflow-hidden">
+  <div class="bg-gray-900 h-screen flex flex-col overflow-hidden">
     <DangerModal
       :type="modal.Danger.type"
       :title="modal.Danger.title"
@@ -10,38 +10,63 @@
       @close-modal="closeModal"
     />
     <Navbar />
-    <div class="text-center">
-      <div class="relative isolate overflow-hidden bg-gray-900 px-6 py-12">
-        <h2
-          class="mx-auto max-w-2xl text-center text-3xl font-bold tracking-tight text-white sm:text-4xl"
-        >
-          Update an existing 2FA Token
+    <div class="flex-1 overflow-y-auto px-4 py-4">
+      <div class="text-center mb-6">
+        <div class="w-14 h-14 rounded-full bg-gray-700 flex items-center justify-center mx-auto mb-3">
+          <span class="text-xl font-medium text-white">{{ getAvatarPlaceholder(token?.otp.label ?? '') }}</span>
+        </div>
+        <h2 class="text-xl font-bold tracking-tight text-white">
+          Edit Token
         </h2>
+        <p class="mt-1 text-xs leading-5 text-gray-400">
+          {{ token?.otp.label }}
+        </p>
+      </div>
 
-        <div class="flex-col w-full my-6 px-8">
+      <div class="space-y-3">
+        <input
+          v-if="token"
+          v-model="token.otp.label"
+          class="w-full rounded-lg border-0 bg-gray-800 px-3 py-2 text-white text-sm placeholder:text-gray-500 ring-1 ring-inset ring-gray-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+          placeholder="Token name"
+        />
+
+        <div class="relative">
           <input
-            v-model="token!.otp.label"
-            class="my-2 min-w-0 flex-auto rounded-md border-0 bg-white/5 px-3.5 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-white sm:text-sm sm:leading-6 w-full"
-            placeholder="Enter your  Token Name"
+            v-model="secretValue"
+            :type="showSecret ? 'text' : 'password'"
+            class="w-full rounded-lg border-0 bg-gray-800 px-3 py-2 pr-10 text-white text-sm font-mono placeholder:text-gray-500 ring-1 ring-inset ring-gray-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+            placeholder="Secret key"
+            @input="secretValue = secretValue.toUpperCase()"
           />
-
-          <TokenLength class="my-2" @digitSelected="setDigit" />
-
           <button
             type="button"
-            class="my-2 w-full justify-center inline-flex items-center gap-x-2 rounded-md bg-slate-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-600"
-            @click="updateToken(token!)"
+            class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-white"
+            @click="showSecret = !showSecret"
           >
-            <PlusCircleIcon class="-ml-0.5 h-5 w-5" aria-hidden="true" />
-            Update token
+            <EyeSlashIcon v-if="showSecret" class="h-5 w-5" />
+            <EyeIcon v-else class="h-5 w-5" />
           </button>
+        </div>
+
+        <TokenLength @digitSelected="setDigit" />
+
+        <button
+          v-if="token"
+          type="button"
+          class="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+          @click="saveToken(token)"
+        >
+          Save Changes
+        </button>
+
+        <div class="pt-3 border-t border-gray-700">
           <button
             type="button"
-            class="my-2 w-full justify-center inline-flex items-center gap-x-2 rounded-md bg-red-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+            class="w-full rounded-lg bg-red-600/20 px-3 py-2 text-sm font-semibold text-red-400 ring-1 ring-inset ring-red-600/30 hover:bg-red-600/30"
             @click="showRemoveDialogue()"
           >
-            <TrashIcon class="-ml-0.5 h-5 w-5" aria-hidden="true" />
-            Remove token
+            Delete Token
           </button>
         </div>
       </div>
@@ -56,14 +81,35 @@
 </template>
 
 <script setup lang="ts">
-import { PlusCircleIcon, TrashIcon } from "@heroicons/vue/20/solid"
-import { ref } from "vue"
+import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
+import { ref } from 'vue'
+import { decryptSecret, encryptSecret } from '~/composables/useCrypto'
 
 const route = useRoute()
 
-const token = ref<Token | undefined>(
-  getTokens().find((token) => token.id === route.params.id)
-)
+const token = ref<Token | undefined>(getTokens().find((token) => token.id === route.params.id))
+
+if (!token.value) {
+  navigateTo('/')
+}
+
+const secretValue = ref('')
+const originalSecret = ref('')
+const showSecret = ref(false)
+
+onMounted(async () => {
+  if (token.value) {
+    try {
+      const decrypted = token.value.otp.encrypted
+        ? await decryptSecret(token.value.otp.secret)
+        : token.value.otp.secret
+      secretValue.value = decrypted
+      originalSecret.value = decrypted
+    } catch (error) {
+      console.error('Failed to decrypt secret:', error)
+    }
+  }
+})
 
 const notification = useNotification()
 
@@ -71,43 +117,53 @@ const modal = useModal()
 
 const showRemoveDialogue = () =>
   useShowModal(modal.value.Danger, {
-    title: "Remove Token",
-    text: "Are you sure you want to remove this token? This action cannot be undone.",
-    validateTextButton: "Remove",
-    cancelTextButton: "Cancel",
-    type: "Danger",
+    title: 'Delete Token',
+    text: 'Are you sure you want to delete this token? This action cannot be undone.',
+    validateTextButton: 'Delete',
+    cancelTextButton: 'Cancel',
+    type: 'Danger',
   })
 
-const closeModal = async (type: string, response: boolean) => {
+const closeModal = async (_type: string, response: boolean) => {
   modal.value.Danger.open = false
-  if (response) {
-    await removeToken(token.value!)
+  if (response && token.value) {
+    await deleteToken(token.value)
   }
 }
 
-const setDigit = (newDigit: number) => (token.value!.otp.digits = newDigit)
+const setDigit = (newDigit: number) => {
+  if (token.value) {
+    token.value.otp.digits = newDigit
+  }
+}
 
-const updateToken = async (token: Token) => {
-  const updatedToken = getTokens().find((t) => t.id === token.id)
-  if (!updatedToken) return
+const saveToken = async (tokenToSave: Token) => {
+  const updates: Partial<Token['otp']> = {
+    label: tokenToSave.otp.label,
+    digits: tokenToSave.otp.digits,
+  }
 
-  updatedToken.otp.label = token.otp.label
-  updatedToken.otp.digits = token.otp.digits
+  if (secretValue.value && secretValue.value !== originalSecret.value) {
+    updates.secret = await encryptSecret(secretValue.value)
+    updates.encrypted = true
+  }
+
+  updateTokenOtp(tokenToSave.id, updates)
 
   await useShowNotification(notification, {
-    text: "Token successfully updated",
+    text: 'Changes saved',
     delay: 1500,
   })
 }
 
-const removeToken = async (token: Token) => {
+const deleteToken = async (token: Token) => {
   store.setState({
     tokens: store.getState().tokens.filter((t: Token) => t.id !== token.id),
   })
 
   await useShowNotification(notification, {
-    text: "Token successfully removed",
-    delay: 2000,
+    text: 'Token deleted',
+    delay: 1500,
     withLoader: true,
   })
 
