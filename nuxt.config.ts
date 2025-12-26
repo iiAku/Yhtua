@@ -12,6 +12,9 @@ export default defineNuxtConfig({
   },
   css: ['~/assets/css/main.css'],
   ssr: false,
+  app: {
+    pageTransition: { name: 'page', mode: 'out-in' },
+  },
   vite: {
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),

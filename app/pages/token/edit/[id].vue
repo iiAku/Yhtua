@@ -31,6 +31,24 @@
           placeholder="Token name"
         />
 
+        <div class="relative">
+          <input
+            v-model="secretValue"
+            :type="showSecret ? 'text' : 'password'"
+            class="w-full rounded-lg border-0 bg-gray-800 px-3 py-2 pr-10 text-white text-sm font-mono placeholder:text-gray-500 ring-1 ring-inset ring-gray-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+            placeholder="Secret key"
+            @input="secretValue = secretValue.toUpperCase()"
+          />
+          <button
+            type="button"
+            class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-white"
+            @click="showSecret = !showSecret"
+          >
+            <EyeSlashIcon v-if="showSecret" class="h-5 w-5" />
+            <EyeIcon v-else class="h-5 w-5" />
+          </button>
+        </div>
+
         <TokenLength @digitSelected="setDigit" />
 
         <button
@@ -63,7 +81,9 @@
 </template>
 
 <script setup lang="ts">
+import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
+import { decryptSecret, encryptSecret } from '~/composables/useCrypto'
 
 const route = useRoute()
 
@@ -72,6 +92,24 @@ const token = ref<Token | undefined>(getTokens().find((token) => token.id === ro
 if (!token.value) {
   navigateTo('/')
 }
+
+const secretValue = ref('')
+const originalSecret = ref('')
+const showSecret = ref(false)
+
+onMounted(async () => {
+  if (token.value) {
+    try {
+      const decrypted = token.value.otp.encrypted
+        ? await decryptSecret(token.value.otp.secret)
+        : token.value.otp.secret
+      secretValue.value = decrypted
+      originalSecret.value = decrypted
+    } catch (error) {
+      console.error('Failed to decrypt secret:', error)
+    }
+  }
+})
 
 const notification = useNotification()
 
@@ -100,10 +138,17 @@ const setDigit = (newDigit: number) => {
 }
 
 const saveToken = async (tokenToSave: Token) => {
-  updateTokenOtp(tokenToSave.id, {
+  const updates: Partial<Token['otp']> = {
     label: tokenToSave.otp.label,
     digits: tokenToSave.otp.digits,
-  })
+  }
+
+  if (secretValue.value && secretValue.value !== originalSecret.value) {
+    updates.secret = await encryptSecret(secretValue.value)
+    updates.encrypted = true
+  }
+
+  updateTokenOtp(tokenToSave.id, updates)
 
   await useShowNotification(notification, {
     text: 'Changes saved',

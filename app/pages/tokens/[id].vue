@@ -137,7 +137,5 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(() => {
-  clearInterval(intervalId)
-})
+onBeforeUnmount(() => clearInterval(intervalId))
 </script>

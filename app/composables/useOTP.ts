@@ -1,6 +1,24 @@
 import * as OTPAuth from 'otpauth'
 import { decryptSecret, encryptSecret } from './useCrypto'
 
+const secretCache = new Map<string, string>()
+
+export const getCachedSecret = async (
+  encryptedSecret: string,
+  encrypted: boolean,
+): Promise<string> => {
+  if (!encrypted) return encryptedSecret
+
+  const cached = secretCache.get(encryptedSecret)
+  if (cached) return cached
+
+  const decrypted = await decryptSecret(encryptedSecret)
+  secretCache.set(encryptedSecret, decrypted)
+  return decrypted
+}
+
+export const clearSecretCache = () => secretCache.clear()
+
 export const getRemainingTime = (period: number = 30) =>
   period - (Math.floor(Date.now() / 1000) % period)
 
@@ -26,7 +44,7 @@ export const getToken = async ({
 }> => {
   const MAX_RETRIES = 5
 
-  const plaintextSecret = encrypted ? await decryptSecret(secret) : secret
+  const plaintextSecret = await getCachedSecret(secret, encrypted)
 
   const totp = new OTPAuth.TOTP({
     issuer,

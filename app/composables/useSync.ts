@@ -28,6 +28,15 @@ const BACKUP_FILENAME = 'yhtua_backup.json'
 const SYNC_DEBOUNCE_MS = 3000
 const FILE_WATCH_INTERVAL_MS = 10000
 const SYNC_VERSION = '2.1.0'
+const STATUS_CACHE_TTL_MS = 5000
+
+let cachedStatus: SyncStatus | null = null
+let statusCacheTime = 0
+
+const invalidateStatusCache = () => {
+  cachedStatus = null
+  statusCacheTime = 0
+}
 
 export enum SyncErrorCode {
   None = 'none',
@@ -88,9 +97,13 @@ const getSyncMetadata = (): SyncMetadata => {
 const setSyncMetadata = (metadata: Partial<SyncMetadata>) =>
   localStorage.setItem(SYNC_METADATA_KEY, JSON.stringify({ ...getSyncMetadata(), ...metadata }))
 
-export const getSyncStatus = async (): Promise<SyncStatus> => {
-  const hasPath = await hasSyncPath()
-  const hasPass = await hasSyncPassword()
+export const getSyncStatus = async (forceRefresh = false): Promise<SyncStatus> => {
+  const now = Date.now()
+  if (!forceRefresh && cachedStatus && now - statusCacheTime < STATUS_CACHE_TTL_MS) {
+    return cachedStatus
+  }
+
+  const [hasPath, hasPass] = await Promise.all([hasSyncPath(), hasSyncPassword()])
   const metadata = getSyncMetadata()
 
   let syncPath: string | null = null
@@ -102,7 +115,7 @@ export const getSyncStatus = async (): Promise<SyncStatus> => {
     }
   }
 
-  return {
+  cachedStatus = {
     enabled: hasPath && hasPass,
     syncPath,
     hasPassword: hasPass,
@@ -111,6 +124,9 @@ export const getSyncStatus = async (): Promise<SyncStatus> => {
     autoSync: metadata.autoSync,
     passwordMismatch: metadata.passwordMismatch ?? false,
   }
+  statusCacheTime = now
+
+  return cachedStatus
 }
 
 export const configureSyncPath = async (): Promise<string | null> => {
@@ -122,14 +138,17 @@ export const configureSyncPath = async (): Promise<string | null> => {
 
   if (selectedPath) {
     await storeSyncPath(selectedPath)
+    invalidateStatusCache()
     return selectedPath
   }
 
   return null
 }
 
-export const configureSyncPassword = (password: string): Promise<void> =>
-  storeSyncPassword(password)
+export const configureSyncPassword = async (password: string): Promise<void> => {
+  await storeSyncPassword(password)
+  invalidateStatusCache()
+}
 
 export const setAutoSync = (enabled: boolean): void => setSyncMetadata({ autoSync: enabled })
 
@@ -317,14 +336,16 @@ export const hasBackupFile = async (): Promise<boolean> => {
   }
 }
 
-export const getBackupInfo = async (): Promise<{
+export const getBackupInfo = async (
+  status?: SyncStatus,
+): Promise<{
   exists: boolean
   syncedAt: number | null
   tokensCount: number | null
 } | null> => {
   try {
-    const status = await getSyncStatus()
-    if (!status.syncPath || !status.hasPassword) return null
+    const syncStatus = status ?? (await getSyncStatus())
+    if (!syncStatus.syncPath || !syncStatus.hasPassword) return null
 
     const filePath = await getBackupFilePath()
     const fileExists = await exists(filePath)
@@ -378,6 +399,7 @@ export const disableSync = async (): Promise<void> => {
   }
 
   localStorage.removeItem(SYNC_METADATA_KEY)
+  invalidateStatusCache()
 }
 
 let syncTimeout: NodeJS.Timeout | null = null

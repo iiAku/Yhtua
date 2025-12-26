@@ -8,5 +8,21 @@ body {
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow: auto;
+  overflow: hidden;
+  background-color: #111827;
+}
+
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateX(10px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateX(-10px);
 }

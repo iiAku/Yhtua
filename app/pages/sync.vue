@@ -292,28 +292,31 @@ const formatDate = (timestamp: number) => {
   return new Date(timestamp).toLocaleString()
 }
 
-const refreshStatus = async () => {
-  syncStatus.value = await getSyncStatus()
-  backupInfo.value = await getBackupInfo()
-  showPasswordInput.value = !syncStatus.value.hasPassword
+const refreshStatus = async (forceRefresh = false) => {
+  const status = await getSyncStatus(forceRefresh)
+  syncStatus.value = status
+  showPasswordInput.value = !status.hasPassword
 
-  if (syncStatus.value.enabled) {
-    remoteUpdate.value = await checkForRemoteUpdates()
-  } else {
-    remoteUpdate.value = { hasUpdates: false, remoteVersion: null }
-  }
-
-  if (syncStatus.value.passwordMismatch && !showPasswordMismatchModal.value) {
+  if (status.passwordMismatch && !showPasswordMismatchModal.value) {
     showPasswordMismatchModal.value = true
     recoveryPassword.value = ''
     recoveryError.value = ''
+  }
+
+  if (status.enabled) {
+    const [backup, updates] = await Promise.all([getBackupInfo(status), checkForRemoteUpdates()])
+    backupInfo.value = backup
+    remoteUpdate.value = updates
+  } else {
+    backupInfo.value = null
+    remoteUpdate.value = { hasUpdates: false, remoteVersion: null }
   }
 }
 
 const selectSyncFolder = async () => {
   const path = await configureSyncPath()
   if (path) {
-    await refreshStatus()
+    await refreshStatus(true)
 
     if (syncStatus.value.enabled) {
       syncing.value = true
@@ -527,13 +530,6 @@ const keepLocalAndDisableSync = async () => {
   })
 }
 
-onMounted(async () => {
-  await refreshStatus()
-
-  onPasswordMismatch(handlePasswordMismatch)
-})
-
-onUnmounted(() => {
-  onPasswordMismatch(null)
-})
+onMounted(() => onPasswordMismatch(handlePasswordMismatch))
+onUnmounted(() => onPasswordMismatch(null))
 </script>

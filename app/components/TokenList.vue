@@ -1,22 +1,10 @@
 <template>
-  <div v-if="filteredTokens.length === 0" class="flex flex-col items-center justify-center py-16 px-4">
+  <div v-if="filteredTokens.length === 0 && searchQuery" class="flex flex-col items-center justify-center py-16 px-4">
     <div class="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center mb-4">
-      <ShieldCheckIcon class="h-8 w-8 text-gray-600" />
+      <MagnifyingGlassIcon class="h-8 w-8 text-gray-600" />
     </div>
-    <h3 class="text-lg font-medium text-white mb-1">
-      {{ searchQuery ? 'No tokens found' : 'No tokens yet' }}
-    </h3>
-    <p class="text-sm text-gray-400 text-center mb-6">
-      {{ searchQuery ? 'Try a different search term' : 'Add your first 2FA token to get started' }}
-    </p>
-    <NuxtLink
-      v-if="!searchQuery"
-      to="/token/create"
-      class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors"
-    >
-      <PlusIcon class="h-5 w-5" />
-      Add Token
-    </NuxtLink>
+    <h3 class="text-lg font-medium text-white mb-1">No tokens found</h3>
+    <p class="text-sm text-gray-400 text-center">Try a different search term</p>
   </div>
 
   <ul v-else role="list" class="divide-y divide-gray-800 py-2">
@@ -49,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { ChevronRightIcon, PlusIcon, ShieldCheckIcon } from '@heroicons/vue/24/outline'
+import { ChevronRightIcon, MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
 
 const props = defineProps<{
   searchQuery?: string
