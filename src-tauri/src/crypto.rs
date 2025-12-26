@@ -19,7 +19,7 @@ const SALT_LEN: usize = 16;
 const KEY_LEN: usize = 32;
 
 const FALLBACK_DIR: &str = ".yhtua";
-const FALLBACK_CREDS_FILE: &str = "credentials.json";
+const FALLBACK_CREDS_FILE: &str = "credentials.enc";
 
 #[derive(Error, Debug)]
 pub enum CryptoError {
@@ -62,6 +62,23 @@ struct FallbackCredentials {
     sync_path: Option<String>,
 }
 
+fn get_fallback_encryption_key() -> [u8; KEY_LEN] {
+    let username = whoami::username();
+    let hostname = whoami::fallible::hostname().unwrap_or_else(|_| "unknown".to_string());
+    let device_id = format!("yhtua-fallback-{}-{}", username, hostname);
+
+    let salt = b"yhtua-fallback-salt-v1";
+    let mut key = [0u8; KEY_LEN];
+    pbkdf2::derive(
+        pbkdf2::PBKDF2_HMAC_SHA256,
+        NonZeroU32::new(10_000).unwrap(),
+        salt,
+        device_id.as_bytes(),
+        &mut key,
+    );
+    key
+}
+
 fn read_fallback_credentials() -> FallbackCredentials {
     let path = match get_credentials_file_path() {
         Ok(p) => p,
@@ -73,7 +90,13 @@ fn read_fallback_credentials() -> FallbackCredentials {
     }
 
     match fs::read_to_string(&path) {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Ok(encrypted_content) => {
+            let key = get_fallback_encryption_key();
+            match decrypt_aes256gcm(&encrypted_content, &key) {
+                Ok(decrypted) => serde_json::from_str(&decrypted).unwrap_or_default(),
+                Err(_) => FallbackCredentials::default(),
+            }
+        }
         Err(_) => FallbackCredentials::default(),
     }
 }
@@ -86,10 +109,13 @@ fn write_fallback_credentials(creds: &FallbackCredentials) -> Result<(), CryptoE
     }
 
     let path = get_credentials_file_path()?;
-    let json = serde_json::to_string_pretty(creds)
+    let json = serde_json::to_string(creds)
         .map_err(|e| CryptoError::Storage(format!("Cannot serialize: {}", e)))?;
 
-    fs::write(&path, json)
+    let key = get_fallback_encryption_key();
+    let encrypted = encrypt_aes256gcm(&json, &key)?;
+
+    fs::write(&path, encrypted)
         .map_err(|e| CryptoError::Storage(format!("Cannot write file: {}", e)))?;
 
     #[cfg(unix)]
