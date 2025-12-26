@@ -53,18 +53,21 @@ const closeModal = async (type: string, response: boolean) => {
 
 const settings = [
   {
+    id: "import",
     href: () => importTokens(notification),
     icon: ArrowDownOnSquareIcon,
     title: "Import Your Tokens",
     description: "Import your Yhtua token settings ",
   },
   {
+    id: "export",
     href: () => exportTokens(notification),
     icon: ArrowUpOnSquareIcon,
     title: "Export Your Tokens",
     description: "Export your Yhtua token settings",
   },
   {
+    id: "remove",
     href: () => showRemoveDialogue(),
     icon: TrashIcon,
     title: "Remove Your Tokens",

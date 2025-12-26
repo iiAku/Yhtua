@@ -46,9 +46,15 @@ export const store = createStore(
 
 export const clearStore = () => store.persist.clearStorage()
 
-export const getTokens = (): Token[] => {
+export const cleanupInvalidTokens = () => {
   const tokens = store.getState().tokens
-  store.setState({ tokens: tokens.filter(token => tokenSchema.safeParse(token).success) })
+  const validTokens = tokens.filter(token => tokenSchema.safeParse(token).success)
+  if (validTokens.length !== tokens.length) {
+    store.setState({ tokens: validTokens })
+  }
+}
+
+export const getTokens = (): Token[] => {
   return store.getState().tokens.toSorted((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0))
 }
 

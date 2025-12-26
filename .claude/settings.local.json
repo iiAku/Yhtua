@@ -12,7 +12,8 @@
       "Bash(LD_PRELOAD=/usr/lib/libwayland-client.so timeout 60 bun run tauri dev:*)",
       "Bash(LD_PRELOAD=/usr/lib/libwayland-client.so timeout 120 bun run tauri dev:*)",
       "Bash(LD_PRELOAD=/usr/lib/libwayland-client.so timeout 90 bun run tauri dev:*)",
-      "Bash(timeout 30 bun run dev:*)"
+      "Bash(timeout 30 bun run dev:*)",
+      "Bash(cargo search:*)"
     ]
   }
 }

@@ -1,6 +1,6 @@
 import { open, save } from "@tauri-apps/plugin-dialog"
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs"
-import { downloadDir } from "@tauri-apps/api/path"
+import { downloadDir, join } from "@tauri-apps/api/path"
 import { z } from "zod"
 
 const jsonCodec = <T extends z.core.$ZodType>(schema: T) =>
@@ -27,7 +27,7 @@ export const exportTokens = async (notification: Ref<AppNotification>) => {
     const downloadPath = await downloadDir()
 
     const saveFilePath = await save({
-      defaultPath: downloadPath + "/" + filename,
+      defaultPath: await join(downloadPath, filename),
     })
 
     if (saveFilePath === null) {

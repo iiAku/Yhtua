@@ -87,7 +87,7 @@ onMounted(async () => {
     await updateToken(token.value)
     intervalId = setInterval(async () => {
       renderedToken.remainingTime = getRemainingTime(time.value)
-      if (token && [1, DEFAULT_PERIOD].includes(renderedToken.remainingTime)) {
+      if (token.value && [1, DEFAULT_PERIOD].includes(renderedToken.remainingTime)) {
         await updateToken(token.value!)
       }
     }, 1000)
