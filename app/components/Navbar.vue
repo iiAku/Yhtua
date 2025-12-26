@@ -25,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import { ChevronLeftIcon, PencilSquareIcon } from "@heroicons/vue/24/outline"
+import { ChevronLeftIcon, PencilSquareIcon } from '@heroicons/vue/24/outline'
 
 const router = useRouter()
 
@@ -37,9 +37,9 @@ const goBack = () => {
   if (window.history.length > 1) {
     router.back()
   } else {
-    navigateTo("/")
+    navigateTo('/')
   }
 }
 
-const edit = () => router.push("/token/edit/" + props.tokenId)
+const edit = () => router.push(`/token/edit/${props.tokenId}`)
 </script>

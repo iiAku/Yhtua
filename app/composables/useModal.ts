@@ -9,12 +9,12 @@ type Modal = {
 
 export const useModal = () => {
   const emptyState = {
-    id: "",
-    type: "",
-    title: "",
-    text: "",
-    validateTextButton: "",
-    cancelTextButton: "",
+    id: '',
+    type: '',
+    title: '',
+    text: '',
+    validateTextButton: '',
+    cancelTextButton: '',
     open: false,
   }
   return ref({
@@ -25,8 +25,9 @@ export const useModal = () => {
   })
 }
 
-export const useShowModal = (modal: Modal,
-  { type, title, text, validateTextButton, cancelTextButton }: Omit<Modal, "open">
+export const useShowModal = (
+  modal: Modal,
+  { type, title, text, validateTextButton, cancelTextButton }: Omit<Modal, 'open'>,
 ) => {
   modal.cancelTextButton = cancelTextButton
   modal.title = title

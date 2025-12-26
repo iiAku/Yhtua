@@ -40,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import { CheckCircleIcon, XCircleIcon } from "@heroicons/vue/24/outline"
+import { CheckCircleIcon, XCircleIcon } from '@heroicons/vue/24/outline'
 
 const props = defineProps<{
   text: string

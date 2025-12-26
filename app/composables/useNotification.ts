@@ -1,8 +1,8 @@
 export enum NotificationType {
-  Information = "Information",
-  Success = "Success",
-  Warning = "Warning",
-  Danger = "Danger",
+  Information = 'Information',
+  Success = 'Success',
+  Warning = 'Warning',
+  Danger = 'Danger',
 }
 
 export type AppNotification = {
@@ -12,7 +12,8 @@ export type AppNotification = {
   withLoader: boolean
 }
 
-export const useNotification = () => ref<AppNotification>({ show: false, text: "", type: NotificationType.Success, withLoader: false })
+export const useNotification = () =>
+  ref<AppNotification>({ show: false, text: '', type: NotificationType.Success, withLoader: false })
 
 export const useShowNotification = async (
   notification: Ref<AppNotification>,
@@ -20,19 +21,19 @@ export const useShowNotification = async (
     text,
     type,
     delay = 5000,
-    withLoader = false
+    withLoader = false,
   }: {
     text: string
     type?: NotificationType
     delay?: number
     withLoader?: boolean
-  }
+  },
 ) => {
   notification.value = {
     show: true,
     type: type ? type : NotificationType.Success,
     text,
-    withLoader
+    withLoader,
   }
   await useSleep(delay)
   if (notification.value.show) {
@@ -40,6 +41,5 @@ export const useShowNotification = async (
   }
 }
 
-export const useHideNotification = (
-  notification: Ref<AppNotification>
-) => (notification.value.show = false)
+export const useHideNotification = (notification: Ref<AppNotification>) =>
+  (notification.value.show = false)

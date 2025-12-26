@@ -98,12 +98,12 @@
 
 <script setup lang="ts">
 import {
-  Cog6ToothIcon,
-  CloudArrowUpIcon,
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
-  TrashIcon,
   ChevronRightIcon,
+  CloudArrowUpIcon,
+  Cog6ToothIcon,
+  TrashIcon,
 } from '@heroicons/vue/24/outline'
 
 const appVersion = __APP_VERSION__
@@ -113,14 +113,14 @@ const modal = useModal()
 
 const showRemoveDialogue = () =>
   useShowModal(modal.value.Danger, {
-    title: "Delete All Tokens",
-    text: "Are you sure you want to delete all tokens? This action cannot be undone.",
-    validateTextButton: "Delete All",
-    cancelTextButton: "Cancel",
-    type: "Danger",
+    title: 'Delete All Tokens',
+    text: 'Are you sure you want to delete all tokens? This action cannot be undone.',
+    validateTextButton: 'Delete All',
+    cancelTextButton: 'Cancel',
+    type: 'Danger',
   })
 
-const closeModal = async (type: string, response: boolean) => {
+const closeModal = async (_type: string, response: boolean) => {
   modal.value.Danger.open = false
   if (response) {
     await removeAllTokens(notification)

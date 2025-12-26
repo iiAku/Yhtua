@@ -49,7 +49,7 @@
 </template>
 
 <script setup lang="ts">
-import { ChevronRightIcon, PlusIcon, ShieldCheckIcon } from "@heroicons/vue/24/outline"
+import { ChevronRightIcon, PlusIcon, ShieldCheckIcon } from '@heroicons/vue/24/outline'
 
 const tokens: Token[] = getTokens()
 
@@ -62,9 +62,7 @@ const filteredTokens = computed(() => {
     return tokens
   }
   return tokens.filter((token) => {
-    return token.otp.label
-      .toLowerCase()
-      .includes(props.searchQuery!.toLowerCase())
+    return token.otp.label.toLowerCase().includes(props.searchQuery!.toLowerCase())
   })
 })
 </script>

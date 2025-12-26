@@ -85,15 +85,9 @@
 </template>
 
 <script setup lang="ts">
-import {
-  Dialog,
-  DialogPanel,
-  DialogTitle,
-  TransitionChild,
-  TransitionRoot,
-} from "@headlessui/vue"
+import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
 
-import { ExclamationTriangleIcon } from "@heroicons/vue/24/outline"
+import { ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 
 const props = defineProps<{
   open: boolean

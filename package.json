@@ -12,7 +12,10 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "check": "biome check --write ."
   },
   "dependencies": {
     "@headlessui/vue": "^1.7.23",
@@ -29,6 +32,7 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.3.10",
     "@tauri-apps/cli": "^2.9.6",
     "autoprefixer": "^10.4.23",
     "postcss": "^8.5.6",

@@ -65,8 +65,8 @@
 import { PlusCircleIcon } from '@heroicons/vue/24/outline'
 
 const token = reactive({
-  label: "",
-  secret: "",
+  label: '',
+  secret: '',
   digits: DEFAULT_DIGITS,
 })
 
@@ -98,7 +98,7 @@ const addToken = async ({
     const token: Token = await createNewToken(
       validParams.data.secret.toUpperCase(),
       validParams.data.label,
-      validParams.data.digits
+      validParams.data.digits,
     )
 
     storeAddToken(token)

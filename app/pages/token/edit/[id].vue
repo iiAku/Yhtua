@@ -61,13 +61,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue"
+import { ref } from 'vue'
 
 const route = useRoute()
 
-const token = ref<Token | undefined>(
-  getTokens().find((token) => token.id === route.params.id)
-)
+const token = ref<Token | undefined>(getTokens().find((token) => token.id === route.params.id))
 
 const notification = useNotification()
 
@@ -75,14 +73,14 @@ const modal = useModal()
 
 const showRemoveDialogue = () =>
   useShowModal(modal.value.Danger, {
-    title: "Delete Token",
-    text: "Are you sure you want to delete this token? This action cannot be undone.",
-    validateTextButton: "Delete",
-    cancelTextButton: "Cancel",
-    type: "Danger",
+    title: 'Delete Token',
+    text: 'Are you sure you want to delete this token? This action cannot be undone.',
+    validateTextButton: 'Delete',
+    cancelTextButton: 'Cancel',
+    type: 'Danger',
   })
 
-const closeModal = async (type: string, response: boolean) => {
+const closeModal = async (_type: string, response: boolean) => {
   modal.value.Danger.open = false
   if (response) {
     await deleteToken(token.value!)
@@ -99,7 +97,7 @@ const saveToken = async (token: Token) => {
   existingToken.otp.digits = token.otp.digits
 
   await useShowNotification(notification, {
-    text: "Changes saved",
+    text: 'Changes saved',
     delay: 1500,
   })
 }
@@ -110,7 +108,7 @@ const deleteToken = async (token: Token) => {
   })
 
   await useShowNotification(notification, {
-    text: "Token deleted",
+    text: 'Token deleted',
     delay: 1500,
     withLoader: true,
   })

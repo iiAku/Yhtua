@@ -27,17 +27,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue"
-import { RadioGroup, RadioGroupLabel, RadioGroupOption } from "@headlessui/vue"
+import { RadioGroup, RadioGroupLabel, RadioGroupOption } from '@headlessui/vue'
+import { ref } from 'vue'
 
 defineEmits<{
   digitSelected: [digit: number]
 }>()
 
 const digits = [
-  { name: "6-digit", type: 6 },
-  { name: "7-digit", type: 7 },
-  { name: "8-digit", type: 8 },
+  { name: '6-digit', type: 6 },
+  { name: '7-digit', type: 7 },
+  { name: '8-digit', type: 8 },
 ]
 
 const digitModel = ref(digits[0])

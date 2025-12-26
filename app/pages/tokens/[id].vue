@@ -64,8 +64,8 @@
 </template>
 
 <script setup lang="ts">
-import { CheckIcon, ClipboardDocumentIcon } from "@heroicons/vue/24/outline"
-import { writeText } from "@tauri-apps/plugin-clipboard-manager"
+import { CheckIcon, ClipboardDocumentIcon } from '@heroicons/vue/24/outline'
+import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 
 const route = useRoute()
 
@@ -73,21 +73,21 @@ const time = ref(DEFAULT_PERIOD)
 const copied = ref(false)
 
 const token = ref<Token | undefined>(
-  store.getState().tokens.find((token) => token.id === route.params.id)
+  store.getState().tokens.find((token) => token.id === route.params.id),
 )
 
 if (!token.value) {
-  navigateTo("/")
+  navigateTo('/')
 }
 
 const renderedToken = reactive({
-  value: "",
+  value: '',
   remainingTime: 0,
 })
 
 let intervalId: NodeJS.Timeout
 
-const padNumber = (number: number) => number.toString().padStart(2, "0")
+const padNumber = (number: number) => number.toString().padStart(2, '0')
 
 const formatCode = (code: string) => {
   if (code.length === 6) return `${code.slice(0, 3)} ${code.slice(3)}`
@@ -109,7 +109,7 @@ const copy = async () => {
       copied.value = false
     }, 2000)
   } catch (error) {
-    console.error("Failed to copy:", error)
+    console.error('Failed to copy:', error)
   }
 }
 

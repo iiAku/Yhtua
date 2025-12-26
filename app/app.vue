@@ -6,8 +6,13 @@
 
 <script setup lang="ts">
 import { runMigrationIfNeeded } from '~/composables/useMigration'
-import { triggerDebouncedSync, getSyncStatus, initFileWatcher, stopFileWatcher } from '~/composables/useSync'
 import { store } from '~/composables/useStore'
+import {
+  getSyncStatus,
+  initFileWatcher,
+  stopFileWatcher,
+  triggerDebouncedSync,
+} from '~/composables/useSync'
 
 const migrating = ref(false)
 

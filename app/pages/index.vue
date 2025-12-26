@@ -38,17 +38,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue"
-import { MagnifyingGlassIcon } from "@heroicons/vue/20/solid"
-import { Cog6ToothIcon, PlusIcon } from "@heroicons/vue/24/outline"
+import { MagnifyingGlassIcon } from '@heroicons/vue/20/solid'
+import { Cog6ToothIcon, PlusIcon } from '@heroicons/vue/24/outline'
+import { ref } from 'vue'
 
 definePageMeta({
-  middleware: "onboarding",
+  middleware: 'onboarding',
 })
 
-const searchQuery = ref("")
-const createNewToken = () => navigateTo("/token/create")
-const openSettings = () => navigateTo("/settings")
+const searchQuery = ref('')
+const createNewToken = () => navigateTo('/token/create')
+const openSettings = () => navigateTo('/settings')
 </script>
 
 <style scoped>

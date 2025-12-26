@@ -1,15 +1,5 @@
-import {
-  store,
-  getStoreVersion,
-  CURRENT_STORE_VERSION,
-  StoreVersion,
-  type Token
-} from './useStore'
-import {
-  initializeEncryption,
-  encryptSecret,
-  isEncryptionReady
-} from './useCrypto'
+import { encryptSecret, initializeEncryption, isEncryptionReady } from './useCrypto'
+import { CURRENT_STORE_VERSION, getStoreVersion, StoreVersion, store, type Token } from './useStore'
 
 export interface MigrationResult {
   migrated: boolean
@@ -17,11 +7,10 @@ export interface MigrationResult {
   error?: string
 }
 
-export const needsMigration = (): boolean =>
-  getStoreVersion() < CURRENT_STORE_VERSION
+export const needsMigration = (): boolean => getStoreVersion() < CURRENT_STORE_VERSION
 
 export const hasPlaintextSecrets = (): boolean =>
-  store.getState().tokens.some(token => !token.otp.encrypted)
+  store.getState().tokens.some((token) => !token.otp.encrypted)
 
 export const migrateToEncryptedStore = async (): Promise<MigrationResult> => {
   try {
@@ -36,7 +25,7 @@ export const migrateToEncryptedStore = async (): Promise<MigrationResult> => {
       return {
         migrated: false,
         tokensEncrypted: 0,
-        error: 'Failed to initialize encryption'
+        error: 'Failed to initialize encryption',
       }
     }
 
@@ -58,31 +47,31 @@ export const migrateToEncryptedStore = async (): Promise<MigrationResult> => {
             otp: {
               ...token.otp,
               secret: encryptedSecret,
-              encrypted: true
-            }
+              encrypted: true,
+            },
           }
         } catch (error) {
           console.error(`Failed to encrypt token ${token.id}:`, error)
           return token
         }
-      })
+      }),
     )
 
     store.setState({
       version: CURRENT_STORE_VERSION,
-      tokens: migratedTokens
+      tokens: migratedTokens,
     })
 
     return {
       migrated: true,
-      tokensEncrypted: encryptedCount
+      tokensEncrypted: encryptedCount,
     }
   } catch (error) {
     console.error('Migration failed:', error)
     return {
       migrated: false,
       tokensEncrypted: 0,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
     }
   }
 }

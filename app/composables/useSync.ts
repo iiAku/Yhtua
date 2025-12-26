@@ -1,22 +1,22 @@
-import { open } from "@tauri-apps/plugin-dialog"
-import { readTextFile, writeTextFile, exists, mkdir } from "@tauri-apps/plugin-fs"
-import { join } from "@tauri-apps/api/path"
-import { z } from "zod"
+import { join } from '@tauri-apps/api/path'
+import { open } from '@tauri-apps/plugin-dialog'
+import { exists, mkdir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import { z } from 'zod'
 import {
-  storeSyncPath,
-  getSyncPath,
-  hasSyncPath,
-  deleteSyncPath,
-  storeSyncPassword,
-  getSyncPassword,
-  hasSyncPassword,
-  deleteSyncPassword,
-  encryptWithPassword,
-  decryptWithPassword,
   decryptSecret,
+  decryptWithPassword,
+  deleteSyncPassword,
+  deleteSyncPath,
   encryptSecret,
+  encryptWithPassword,
+  getSyncPassword,
+  getSyncPath,
+  hasSyncPassword,
+  hasSyncPath,
+  storeSyncPassword,
+  storeSyncPath,
 } from './useCrypto'
-import { getTokens, storeAddToken, replaceAllTokens, type Token } from './useStore'
+import { getTokens, replaceAllTokens, storeAddToken, type Token } from './useStore'
 
 const BACKUP_FILENAME = 'yhtua_backup.json'
 const SYNC_DEBOUNCE_MS = 3000
@@ -94,7 +94,7 @@ export const configureSyncPath = async (): Promise<string | null> => {
   const selectedPath = await open({
     directory: true,
     multiple: false,
-    title: "Select Sync Folder",
+    title: 'Select Sync Folder',
   })
 
   if (selectedPath && typeof selectedPath === 'string') {
@@ -108,11 +108,9 @@ export const configureSyncPath = async (): Promise<string | null> => {
 export const configureSyncPassword = (password: string): Promise<void> =>
   storeSyncPassword(password)
 
-export const setAutoSync = (enabled: boolean): void =>
-  setSyncMetadata({ autoSync: enabled })
+export const setAutoSync = (enabled: boolean): void => setSyncMetadata({ autoSync: enabled })
 
-const getBackupFilePath = async (): Promise<string> =>
-  join(await getSyncPath(), BACKUP_FILENAME)
+const getBackupFilePath = async (): Promise<string> => join(await getSyncPath(), BACKUP_FILENAME)
 
 const getPlaintextSecret = async (token: Token): Promise<string> =>
   token.otp.encrypted ? decryptSecret(token.otp.secret) : token.otp.secret
@@ -143,23 +141,20 @@ export const syncToFile = async (): Promise<SyncResult> => {
           secret: await getPlaintextSecret(token),
           encrypted: false,
         },
-      }))
+      })),
     )
 
     const backupData = {
-      version: "2.1.0",
+      version: '2.1.0',
       encrypted: false,
       tokens: decryptedTokens,
     }
 
-    const encryptedData = await encryptWithPassword(
-      JSON.stringify(backupData),
-      password
-    )
+    const encryptedData = await encryptWithPassword(JSON.stringify(backupData), password)
 
     const syncedAt = Date.now()
     const syncBackup = {
-      version: "2.1.0",
+      version: '2.1.0',
       encrypted: true,
       syncedAt,
       data: encryptedData,
@@ -210,7 +205,7 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       return { success: false, message: 'Invalid backup file format' }
     }
 
-    let decryptedData
+    let decryptedData: { tokens: Token[] }
     try {
       const decryptedJson = await decryptWithPassword(parsed.data.data, password)
       decryptedData = JSON.parse(decryptedJson)
@@ -226,7 +221,7 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
           secret: await encryptSecret(token.otp.secret),
           encrypted: true,
         },
-      }))
+      })),
     )
 
     if (replaceExisting) {
@@ -371,7 +366,7 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
       return { success: false, message: 'Invalid backup file format' }
     }
 
-    let decryptedData
+    let decryptedData: { tokens: Token[] }
     try {
       const decryptedJson = await decryptWithPassword(parsed.data.data, password)
       decryptedData = JSON.parse(decryptedJson)
@@ -389,7 +384,7 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
           secret: await encryptSecret(token.otp.secret),
           encrypted: true,
         },
-      }))
+      })),
     )
 
     replaceAllTokens(reEncryptedTokens)
@@ -435,7 +430,8 @@ export const checkForRemoteUpdates = async (): Promise<{
   const remoteVersion = await getFileSyncedAt()
 
   return {
-    hasUpdates: remoteVersion !== null &&
+    hasUpdates:
+      remoteVersion !== null &&
       metadata.lastKnownFileVersion !== null &&
       remoteVersion > metadata.lastKnownFileVersion,
     remoteVersion,

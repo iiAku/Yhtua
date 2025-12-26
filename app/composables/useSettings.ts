@@ -1,12 +1,12 @@
-import { open, save } from "@tauri-apps/plugin-dialog"
-import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs"
-import { downloadDir, join } from "@tauri-apps/api/path"
-import { z } from "zod"
+import { downloadDir, join } from '@tauri-apps/api/path'
+import { open, save } from '@tauri-apps/plugin-dialog'
+import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import { z } from 'zod'
 import {
   decryptSecret,
+  decryptWithPassword,
   encryptSecret,
   encryptWithPassword,
-  decryptWithPassword,
   initializeEncryption,
 } from './useCrypto'
 
@@ -18,7 +18,7 @@ const encryptedExportSchema = z.object({
 
 const parseAndValidate = <T extends z.ZodType>(
   jsonString: string,
-  schema: T
+  schema: T,
 ): z.SafeParseReturnType<unknown, z.infer<T>> => {
   try {
     const parsed = JSON.parse(jsonString)
@@ -26,11 +26,13 @@ const parseAndValidate = <T extends z.ZodType>(
   } catch (err) {
     return {
       success: false,
-      error: new z.ZodError([{
-        code: 'custom',
-        path: [],
-        message: err instanceof Error ? err.message : 'Invalid JSON',
-      }]),
+      error: new z.ZodError([
+        {
+          code: 'custom',
+          path: [],
+          message: err instanceof Error ? err.message : 'Invalid JSON',
+        },
+      ]),
     } as z.SafeParseReturnType<unknown, z.infer<T>>
   }
 }
@@ -44,10 +46,10 @@ const getPlaintextSecret = async (token: Token): Promise<string> => {
 
 export const exportTokensEncrypted = async (
   notification: Ref<AppNotification>,
-  password: string
+  password: string,
 ): Promise<boolean> => {
   try {
-    const filename = "yhtua_backup.json"
+    const filename = 'yhtua_backup.json'
     const downloadPath = await downloadDir()
 
     const saveFilePath = await save({
@@ -67,36 +69,33 @@ export const exportTokensEncrypted = async (
           secret: await getPlaintextSecret(token),
           encrypted: false,
         },
-      }))
+      })),
     )
 
     const backupData = {
-      version: "2.1.0",
+      version: '2.1.0',
       encrypted: false,
       tokens: decryptedTokens,
     }
 
-    const encryptedData = await encryptWithPassword(
-      JSON.stringify(backupData),
-      password
-    )
+    const encryptedData = await encryptWithPassword(JSON.stringify(backupData), password)
 
     const encryptedBackup = {
-      version: "2.1.0",
+      version: '2.1.0',
       encrypted: true,
       data: encryptedData,
     }
 
     await writeTextFile(saveFilePath, JSON.stringify(encryptedBackup))
     await useShowNotification(notification, {
-      text: "Tokens exported with encryption",
+      text: 'Tokens exported with encryption',
       delay: 1500,
     })
     return true
   } catch (error) {
     console.error('Export error:', error)
     await useShowNotification(notification, {
-      text: "Error while exporting tokens",
+      text: 'Error while exporting tokens',
       delay: 1500,
       type: NotificationType.Danger,
     })
@@ -107,15 +106,15 @@ export const exportTokensEncrypted = async (
 export const importTokensEncrypted = async (
   notification: Ref<AppNotification>,
   password: string,
-  navigateToHome?: boolean
+  navigateToHome?: boolean,
 ): Promise<boolean> => {
   try {
     const jsonPath = await open({
       multiple: false,
       filters: [
         {
-          name: "json",
-          extensions: ["json"],
+          name: 'json',
+          extensions: ['json'],
         },
       ],
     })
@@ -130,10 +129,7 @@ export const importTokensEncrypted = async (
 
     if (encryptedResult.success) {
       try {
-        const decryptedJson = await decryptWithPassword(
-          encryptedResult.data.data,
-          password
-        )
+        const decryptedJson = await decryptWithPassword(encryptedResult.data.data, password)
         const decryptedData = JSON.parse(decryptedJson)
 
         await initializeEncryption()
@@ -146,7 +142,7 @@ export const importTokensEncrypted = async (
               secret: await encryptSecret(token.otp.secret),
               encrypted: true,
             },
-          }))
+          })),
         )
 
         storeAddToken(reEncryptedTokens)
@@ -157,12 +153,12 @@ export const importTokensEncrypted = async (
         })
 
         if (navigateToHome) {
-          navigateTo("/")
+          navigateTo('/')
         }
         return true
       } catch {
         await useShowNotification(notification, {
-          text: "Wrong password or corrupted file",
+          text: 'Wrong password or corrupted file',
           delay: 2000,
           type: NotificationType.Danger,
         })
@@ -180,12 +176,10 @@ export const importTokensEncrypted = async (
           ...token,
           otp: {
             ...token.otp,
-            secret: token.otp.encrypted
-              ? token.otp.secret
-              : await encryptSecret(token.otp.secret),
+            secret: token.otp.encrypted ? token.otp.secret : await encryptSecret(token.otp.secret),
             encrypted: true,
           },
-        }))
+        })),
       )
 
       storeAddToken(reEncryptedTokens)
@@ -196,14 +190,14 @@ export const importTokensEncrypted = async (
       })
 
       if (navigateToHome) {
-        navigateTo("/")
+        navigateTo('/')
       }
       return true
     }
 
     console.error('Import validation error:', legacyResult.error?.issues)
     await useShowNotification(notification, {
-      text: "Invalid token file format",
+      text: 'Invalid token file format',
       delay: 1500,
       type: NotificationType.Danger,
     })
@@ -211,7 +205,7 @@ export const importTokensEncrypted = async (
   } catch (err) {
     console.error('Import error:', err)
     await useShowNotification(notification, {
-      text: "Error while importing tokens",
+      text: 'Error while importing tokens',
       delay: 1500,
       type: NotificationType.Danger,
     })
@@ -221,7 +215,7 @@ export const importTokensEncrypted = async (
 
 export const exportTokens = async (notification: Ref<AppNotification>) => {
   try {
-    const filename = "ythua_export_token.json"
+    const filename = 'ythua_export_token.json'
     const downloadPath = await downloadDir()
 
     const saveFilePath = await save({
@@ -241,36 +235,39 @@ export const exportTokens = async (notification: Ref<AppNotification>) => {
           secret: await getPlaintextSecret(token),
           encrypted: false,
         },
-      }))
+      })),
     )
 
     const backup = {
-      version: "2.0.0",
+      version: '2.0.0',
       tokens: decryptedTokens,
     }
 
     await writeTextFile(saveFilePath, JSON.stringify(backup))
     await useShowNotification(notification, {
-      text: "Tokens exported (unencrypted)",
+      text: 'Tokens exported (unencrypted)',
       delay: 1500,
     })
   } catch (error) {
     await useShowNotification(notification, {
-      text: "Error while exporting tokens",
+      text: 'Error while exporting tokens',
       delay: 1500,
       type: NotificationType.Danger,
     })
   }
 }
 
-export const importTokens = async (notification: Ref<AppNotification>, navigateToHome?: boolean) => {
+export const importTokens = async (
+  notification: Ref<AppNotification>,
+  navigateToHome?: boolean,
+) => {
   try {
     const jsonPath = await open({
       multiple: false,
       filters: [
         {
-          name: "json",
-          extensions: ["json"],
+          name: 'json',
+          extensions: ['json'],
         },
       ],
     })
@@ -284,18 +281,14 @@ export const importTokens = async (notification: Ref<AppNotification>, navigateT
     if (!result.success) {
       console.error('Import validation error:', result.error.issues)
       await useShowNotification(notification, {
-        text: "Invalid token file format",
+        text: 'Invalid token file format',
         delay: 1500,
         type: NotificationType.Danger,
       })
       return
     }
 
-    try {
-      await initializeEncryption()
-    } catch (initError) {
-      throw initError
-    }
+    await initializeEncryption()
 
     const reEncryptedTokens = await Promise.all(
       result.data.tokens.map(async (token: Token) => {
@@ -315,7 +308,7 @@ export const importTokens = async (notification: Ref<AppNotification>, navigateT
           console.error(`Failed to encrypt token ${token.id}:`, encryptError)
           throw encryptError
         }
-      })
+      }),
     )
 
     storeAddToken(reEncryptedTokens)
@@ -325,12 +318,12 @@ export const importTokens = async (notification: Ref<AppNotification>, navigateT
       delay: 1500,
     })
     if (navigateToHome) {
-      navigateTo("/")
+      navigateTo('/')
     }
   } catch (err) {
     console.error('Import error:', err)
     await useShowNotification(notification, {
-      text: "Error while importing tokens",
+      text: 'Error while importing tokens',
       delay: 1500,
       type: NotificationType.Danger,
     })
@@ -341,12 +334,12 @@ export const removeAllTokens = async (notification: Ref<AppNotification>) => {
   try {
     store.setState(defaultStore())
     await useShowNotification(notification, {
-      text: "All tokens removed",
+      text: 'All tokens removed',
       delay: 1500,
     })
   } catch (error) {
     await useShowNotification(notification, {
-      text: "Error while removing tokens",
+      text: 'Error while removing tokens',
       delay: 1500,
       type: NotificationType.Danger,
     })

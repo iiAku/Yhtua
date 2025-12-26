@@ -238,20 +238,20 @@
 <script setup lang="ts">
 import { CloudArrowUpIcon } from '@heroicons/vue/24/outline'
 import {
-  getSyncStatus,
-  configureSyncPath,
+  checkForRemoteUpdates,
   configureSyncPassword,
-  setAutoSync,
-  syncToFile,
-  restoreFromFile,
+  configureSyncPath,
   disableSync,
   getBackupInfo,
-  checkForRemoteUpdates,
+  getSyncStatus,
+  onPasswordMismatch,
+  restoreFromFile,
+  type SyncStatus,
+  setAutoSync,
   startFileWatcher,
   stopFileWatcher,
-  onPasswordMismatch,
+  syncToFile,
   tryRestoreWithPassword,
-  type SyncStatus,
 } from '~/composables/useSync'
 
 const notification = useNotification()
@@ -426,26 +426,26 @@ const syncNow = async () => {
 const showRestoreConfirm = () => {
   modalAction.value = 'restore'
   useShowModal(modal.value.Danger, {
-    title: "Restore from Backup",
+    title: 'Restore from Backup',
     text: `This will replace your ${getTokens().length} local tokens with ${backupInfo.value?.tokensCount ?? 'unknown'} tokens from backup. Continue?`,
-    validateTextButton: "Restore",
-    cancelTextButton: "Cancel",
-    type: "Danger",
+    validateTextButton: 'Restore',
+    cancelTextButton: 'Cancel',
+    type: 'Danger',
   })
 }
 
 const showDisableConfirm = () => {
   modalAction.value = 'disable'
   useShowModal(modal.value.Danger, {
-    title: "Disable Sync",
-    text: "This will remove your sync configuration. Your backup file will not be deleted. Continue?",
-    validateTextButton: "Disable",
-    cancelTextButton: "Cancel",
-    type: "Danger",
+    title: 'Disable Sync',
+    text: 'This will remove your sync configuration. Your backup file will not be deleted. Continue?',
+    validateTextButton: 'Disable',
+    cancelTextButton: 'Cancel',
+    type: 'Danger',
   })
 }
 
-const closeModal = async (type: string, response: boolean) => {
+const closeModal = async (_type: string, response: boolean) => {
   modal.value.Danger.open = false
 
   if (!response) {
