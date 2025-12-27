@@ -1,6 +1,6 @@
 {
   "name": "Yhtua",
-  "version": "2.0.0",
+  "version": "2.3.0",
   "description": "Yhtua - Open Source 2FA Token Manager",
   "author": "Yoann Gendrey",
   "license": "MIT",
@@ -13,6 +13,7 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "tauri": "tauri",
+    "tauri:build:linux": "tauri build && ./scripts/patch-appimage.sh",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check --write ."

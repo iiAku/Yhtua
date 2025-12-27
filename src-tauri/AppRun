@@ -1,0 +1,21 @@
+#!/bin/bash
+# Custom AppRun script for Yhtua
+# Sets LD_PRELOAD for Wayland compatibility when needed
+
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
+
+# Only set LD_PRELOAD if:
+# 1. We're running on Wayland (XDG_SESSION_TYPE or WAYLAND_DISPLAY)
+# 2. The library file exists
+if [[ "${XDG_SESSION_TYPE}" == "wayland" || -n "${WAYLAND_DISPLAY}" ]]; then
+    if [[ -f "/usr/lib/libwayland-client.so" ]]; then
+        export LD_PRELOAD=/usr/lib/libwayland-client.so
+    elif [[ -f "/usr/lib/x86_64-linux-gnu/libwayland-client.so" ]]; then
+        # Debian/Ubuntu path
+        export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libwayland-client.so
+    fi
+fi
+
+# Launch the actual application
+exec "${HERE}/yhtua" "$@"
