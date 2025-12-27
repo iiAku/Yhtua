@@ -157,20 +157,7 @@ fn get_credential(name: &str) -> Option<String> {
 }
 
 fn store_credential(name: &str, value: &str) -> Result<(), CryptoError> {
-    let keyring_result = get_keyring_entry(name).and_then(|entry| {
-        entry
-            .set_password(value)
-            .map_err(|e| CryptoError::Keychain(e.to_string()))
-    });
-
-    if keyring_result.is_ok() {
-        return Ok(());
-    }
-
-    log::warn!(
-        "Keyring storage failed, using file fallback: {:?}",
-        keyring_result.err()
-    );
+    // Always write to fallback first for redundancy
     let mut creds = read_fallback_credentials();
     match name {
         KEYCHAIN_KEY_NAME => creds.encryption_key = Some(value.to_string()),
@@ -178,7 +165,23 @@ fn store_credential(name: &str, value: &str) -> Result<(), CryptoError> {
         KEYCHAIN_SYNC_PATH => creds.sync_path = Some(value.to_string()),
         _ => {}
     }
-    write_fallback_credentials(&creds)
+    write_fallback_credentials(&creds)?;
+
+    // Also try to store in keychain (best effort)
+    let keyring_result = get_keyring_entry(name).and_then(|entry| {
+        entry
+            .set_password(value)
+            .map_err(|e| CryptoError::Keychain(e.to_string()))
+    });
+
+    if keyring_result.is_err() {
+        log::warn!(
+            "Keyring storage failed, using file fallback only: {:?}",
+            keyring_result.err()
+        );
+    }
+
+    Ok(())
 }
 
 fn has_credential(name: &str) -> bool {

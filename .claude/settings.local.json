@@ -14,7 +14,11 @@
       "Bash(LD_PRELOAD=/usr/lib/libwayland-client.so timeout 90 bun run tauri dev:*)",
       "Bash(timeout 30 bun run dev:*)",
       "Bash(cargo search:*)",
-      "Bash(bun run check:*)"
+      "Bash(bun run check:*)",
+      "Bash(rustc:*)",
+      "Bash(cargo --version:*)",
+      "Bash(rustup update:*)",
+      "Bash(cargo check:*)"
     ]
   }
 }

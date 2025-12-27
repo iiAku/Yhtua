@@ -530,6 +530,9 @@ const keepLocalAndDisableSync = async () => {
   })
 }
 
-onMounted(() => onPasswordMismatch(handlePasswordMismatch))
+onMounted(async () => {
+  onPasswordMismatch(handlePasswordMismatch)
+  await refreshStatus()
+})
 onUnmounted(() => onPasswordMismatch(null))
 </script>
