@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Yhtua",
-  "version": "2.3.0",
+  "version": "2.3.2",
   "identifier": "com.yhtua.dev",
   "build": {
     "frontendDist": "../dist",

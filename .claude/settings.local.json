@@ -18,7 +18,8 @@
       "Bash(rustc:*)",
       "Bash(cargo --version:*)",
       "Bash(rustup update:*)",
-      "Bash(cargo check:*)"
+      "Bash(cargo check:*)",
+      "Bash(bun update:*)"
     ]
   }
 }

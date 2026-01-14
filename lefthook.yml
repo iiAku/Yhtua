@@ -1,0 +1,6 @@
+pre-commit:
+  commands:
+    bump-version:
+      run: ./scripts/bump-version.sh
+    lint:
+      run: bun run check

@@ -1,6 +1,6 @@
 {
   "name": "Yhtua",
-  "version": "2.3.0",
+  "version": "2.3.2",
   "description": "Yhtua - Open Source 2FA Token Manager",
   "author": "Yoann Gendrey",
   "license": "MIT",
@@ -36,6 +36,7 @@
     "@biomejs/biome": "^2.3.11",
     "@tauri-apps/cli": "^2.9.6",
     "autoprefixer": "^10.4.23",
+    "lefthook": "^2.0.15",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18"
   }
