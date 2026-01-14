@@ -54,7 +54,7 @@
             <div
               class="h-full transition-all duration-1000 ease-linear"
               :class="renderedToken.remainingTime <= 5 ? 'bg-red-500' : 'bg-indigo-500'"
-              :style="{ width: `${(renderedToken.remainingTime / time) * 100}%` }"
+              :style="{ width: `${(renderedToken.remainingTime / (token?.otp.period ?? DEFAULT_PERIOD)) * 100}%` }"
             />
           </div>
           <span
@@ -75,7 +75,6 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 
 const route = useRoute()
 
-const time = ref(DEFAULT_PERIOD)
 const copied = ref(false)
 const copyError = ref(false)
 
@@ -128,9 +127,10 @@ onMounted(async () => {
     updateTokenLastUsed(token.value.id)
     await updateToken(token.value)
 
+    const period = token.value.otp.period ?? DEFAULT_PERIOD
     intervalId = setInterval(async () => {
-      renderedToken.remainingTime = getRemainingTime(time.value)
-      if (token.value && [1, DEFAULT_PERIOD].includes(renderedToken.remainingTime)) {
+      renderedToken.remainingTime = getRemainingTime(period)
+      if (token.value && [1, period].includes(renderedToken.remainingTime)) {
         await updateToken(token.value!)
       }
     }, 1000)
