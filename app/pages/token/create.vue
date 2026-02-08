@@ -3,15 +3,13 @@
     <Navbar />
     <div class="flex-1 overflow-y-auto px-4 py-4">
       <div class="text-center mb-6">
-        <div class="w-14 h-14 rounded-full bg-indigo-600/20 flex items-center justify-center mx-auto mb-3">
+        <div
+          class="w-14 h-14 rounded-full bg-indigo-600/20 flex items-center justify-center mx-auto mb-3"
+        >
           <PlusCircleIcon class="h-7 w-7 text-indigo-400" />
         </div>
-        <h2 class="text-xl font-bold tracking-tight text-white">
-          Add Token
-        </h2>
-        <p class="mt-1 text-xs leading-5 text-gray-400">
-          Enter the secret key from your service
-        </p>
+        <h2 class="text-xl font-bold tracking-tight text-white">Add Token</h2>
+        <p class="mt-1 text-xs leading-5 text-gray-400">Enter the secret key from your service</p>
       </div>
 
       <div class="space-y-3">
@@ -53,11 +51,7 @@
         </button>
       </div>
     </div>
-    <Notification
-      :text="notification.text"
-      :type="notification.type"
-      v-if="notification.show"
-    />
+    <Notification :text="notification.text" :type="notification.type" v-if="notification.show" />
   </div>
 </template>
 

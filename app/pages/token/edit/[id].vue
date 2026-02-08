@@ -12,12 +12,14 @@
     <Navbar />
     <div class="flex-1 overflow-y-auto px-4 py-4">
       <div class="text-center mb-6">
-        <div class="w-14 h-14 rounded-full bg-gray-700 flex items-center justify-center mx-auto mb-3">
-          <span class="text-xl font-medium text-white">{{ getAvatarPlaceholder(token?.otp.label ?? '') }}</span>
+        <div
+          class="w-14 h-14 rounded-full bg-gray-700 flex items-center justify-center mx-auto mb-3"
+        >
+          <span class="text-xl font-medium text-white">{{
+            getAvatarPlaceholder(token?.otp.label ?? '')
+          }}</span>
         </div>
-        <h2 class="text-xl font-bold tracking-tight text-white">
-          Edit Token
-        </h2>
+        <h2 class="text-xl font-bold tracking-tight text-white">Edit Token</h2>
         <p class="mt-1 text-xs leading-5 text-gray-400">
           {{ token?.otp.label }}
         </p>

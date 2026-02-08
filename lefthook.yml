@@ -1,6 +1,9 @@
 pre-commit:
+  parallel: true
   commands:
-    bump-version:
-      run: ./scripts/bump-version.sh
+    format:
+      glob: 'app/**/*.{ts,vue}'
+      run: bunx oxfmt --check {staged_files}
     lint:
-      run: bun run check
+      glob: 'app/**/*.{ts,vue}'
+      run: bunx oxlint {staged_files}

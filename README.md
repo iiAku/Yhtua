@@ -35,23 +35,27 @@
 ## Features
 
 ### Core Features
+
 - **TOTP Support** — Generate 6, 7, or 8-digit time-based one-time passwords
 - **Quick Copy** — Tap to view and auto-copy codes to clipboard
 - **Search** — Quickly find tokens by name
 - **Import/Export** — Backup and restore your tokens
 
 ### Security
+
 - **Encrypted Storage** — Secrets encrypted at rest with AES-256-GCM
 - **OS Keychain Integration** — Encryption keys stored in system keychain
 - **Password-Protected Backups** — Export files encrypted with PBKDF2 + AES-256-GCM
 
 ### Cloud Sync
+
 - **File-Based Sync** — Sync encrypted backups to any cloud folder (Dropbox, Google Drive, OneDrive, etc.)
 - **Auto-Sync** — Automatically backup when tokens change
 - **Multi-Device** — Share tokens across devices securely
 - **Password Mismatch Recovery** — Graceful handling when sync password changes
 
 ### User Experience
+
 - **Modern Dark UI** — Clean, consistent dark theme
 - **Native Desktop App** — Built with Tauri for a lightweight, fast experience
 - **Cross-Platform** — Works on Linux, macOS, and Windows
@@ -100,11 +104,11 @@ Yhtua takes security seriously:
 
 Download the latest release for your platform from the [Releases](https://github.com/iiAku/Yhtua/releases) page.
 
-| Platform | Download |
-|----------|----------|
+| Platform | Download                    |
+| -------- | --------------------------- |
 | Linux    | `.deb`, `.AppImage`, `.rpm` |
-| macOS    | `.dmg` |
-| Windows  | `.msi`, `.exe` |
+| macOS    | `.dmg`                      |
+| Windows  | `.msi`, `.exe`              |
 
 ### Build from Source
 

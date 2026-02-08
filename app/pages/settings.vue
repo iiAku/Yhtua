@@ -11,7 +11,10 @@
     />
 
     <!-- Export Password Modal -->
-    <div v-if="showExportPasswordModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+    <div
+      v-if="showExportPasswordModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+    >
       <div class="bg-gray-800 rounded-lg p-4 mx-4 max-w-sm w-full">
         <div class="flex items-center gap-2 mb-3">
           <div class="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center">
@@ -21,7 +24,8 @@
         </div>
 
         <p class="text-gray-400 text-xs mb-3">
-          Enter a password to encrypt your backup file. You'll need this password to import on any device.
+          Enter a password to encrypt your backup file. You'll need this password to import on any
+          device.
         </p>
 
         <div class="space-y-2 mb-3">
@@ -61,7 +65,10 @@
     </div>
 
     <!-- Import Password Modal -->
-    <div v-if="showImportPasswordModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+    <div
+      v-if="showImportPasswordModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+    >
       <div class="bg-gray-800 rounded-lg p-4 mx-4 max-w-sm w-full">
         <div class="flex items-center gap-2 mb-3">
           <div class="w-8 h-8 rounded-full bg-green-600/20 flex items-center justify-center">
@@ -106,15 +113,13 @@
     <Navbar />
     <div class="flex-1 overflow-y-auto px-4 py-4">
       <div class="text-center mb-6">
-        <div class="w-14 h-14 rounded-full bg-gray-700 flex items-center justify-center mx-auto mb-3">
+        <div
+          class="w-14 h-14 rounded-full bg-gray-700 flex items-center justify-center mx-auto mb-3"
+        >
           <Cog6ToothIcon class="h-7 w-7 text-gray-300" />
         </div>
-        <h2 class="text-xl font-bold tracking-tight text-white">
-          Settings
-        </h2>
-        <p class="mt-1 text-xs leading-5 text-gray-400">
-          Manage your tokens and backups
-        </p>
+        <h2 class="text-xl font-bold tracking-tight text-white">Settings</h2>
+        <p class="mt-1 text-xs leading-5 text-gray-400">Manage your tokens and backups</p>
       </div>
 
       <div class="space-y-3">
@@ -122,7 +127,9 @@
           @click="navigateTo('/sync')"
           class="w-full bg-gray-800 rounded-lg p-4 text-left hover:bg-gray-750 transition-colors flex items-center gap-4"
         >
-          <div class="w-10 h-10 rounded-full bg-indigo-600/20 flex items-center justify-center flex-shrink-0">
+          <div
+            class="w-10 h-10 rounded-full bg-indigo-600/20 flex items-center justify-center flex-shrink-0"
+          >
             <CloudArrowUpIcon class="h-5 w-5 text-indigo-400" />
           </div>
           <div class="flex-1 min-w-0">
@@ -136,7 +143,9 @@
           @click="openImportModal"
           class="w-full bg-gray-800 rounded-lg p-4 text-left hover:bg-gray-750 transition-colors flex items-center gap-4"
         >
-          <div class="w-10 h-10 rounded-full bg-green-600/20 flex items-center justify-center flex-shrink-0">
+          <div
+            class="w-10 h-10 rounded-full bg-green-600/20 flex items-center justify-center flex-shrink-0"
+          >
             <ArrowDownTrayIcon class="h-5 w-5 text-green-400" />
           </div>
           <div class="flex-1 min-w-0">
@@ -150,7 +159,9 @@
           @click="openExportModal"
           class="w-full bg-gray-800 rounded-lg p-4 text-left hover:bg-gray-750 transition-colors flex items-center gap-4"
         >
-          <div class="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center flex-shrink-0">
+          <div
+            class="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center flex-shrink-0"
+          >
             <ArrowUpTrayIcon class="h-5 w-5 text-blue-400" />
           </div>
           <div class="flex-1 min-w-0">
@@ -166,7 +177,9 @@
             @click="showRemoveDialogue"
             class="w-full bg-red-600/10 rounded-lg p-4 text-left hover:bg-red-600/20 transition-colors flex items-center gap-4 ring-1 ring-inset ring-red-600/20"
           >
-            <div class="w-10 h-10 rounded-full bg-red-600/20 flex items-center justify-center flex-shrink-0">
+            <div
+              class="w-10 h-10 rounded-full bg-red-600/20 flex items-center justify-center flex-shrink-0"
+            >
               <TrashIcon class="h-5 w-5 text-red-400" />
             </div>
             <div class="flex-1 min-w-0">
@@ -177,11 +190,7 @@
         </div>
       </div>
 
-      <Notification
-        :text="notification.text"
-        :type="notification.type"
-        v-if="notification.show"
-      />
+      <Notification :text="notification.text" :type="notification.type" v-if="notification.show" />
     </div>
 
     <footer class="py-4 text-center border-t border-gray-800">

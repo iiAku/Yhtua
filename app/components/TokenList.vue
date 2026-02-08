@@ -1,5 +1,8 @@
 <template>
-  <div v-if="filteredTokens.length === 0 && searchQuery" class="flex flex-col items-center justify-center py-16 px-4">
+  <div
+    v-if="filteredTokens.length === 0 && searchQuery"
+    class="flex flex-col items-center justify-center py-16 px-4"
+  >
     <div class="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center mb-4">
       <MagnifyingGlassIcon class="h-8 w-8 text-gray-600" />
     </div>
@@ -8,11 +11,7 @@
   </div>
 
   <ul v-else role="list" class="divide-y divide-gray-800 py-2">
-    <li
-      v-for="token in filteredTokens"
-      :key="token.id"
-      class="relative"
-    >
+    <li v-for="token in filteredTokens" :key="token.id" class="relative">
       <NuxtLink
         :to="`/tokens/${token.id}`"
         class="w-full flex items-center gap-3 py-3 px-2 rounded-lg hover:bg-gray-800 active:bg-gray-700 transition-colors"
@@ -27,10 +26,7 @@
         <span class="flex-1 min-w-0 text-sm font-medium text-white truncate">
           {{ token.otp.label }}
         </span>
-        <ChevronRightIcon
-          class="h-5 w-5 text-gray-500 flex-shrink-0"
-          aria-hidden="true"
-        />
+        <ChevronRightIcon class="h-5 w-5 text-gray-500 flex-shrink-0" aria-hidden="true" />
       </NuxtLink>
     </li>
   </ul>

@@ -10,20 +10,33 @@
       @close-modal="closeModal"
     />
 
-    <div v-if="showPasswordMismatchModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+    <div
+      v-if="showPasswordMismatchModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+    >
       <div class="bg-gray-800 rounded-lg p-4 mx-4 max-w-sm w-full">
         <div class="flex items-center gap-2 mb-3">
           <div class="w-8 h-8 rounded-full bg-yellow-600/20 flex items-center justify-center">
-            <svg class="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            <svg
+              class="w-4 h-4 text-yellow-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
             </svg>
           </div>
           <h3 class="text-white font-semibold text-sm">Password Changed</h3>
         </div>
 
         <p class="text-gray-400 text-xs mb-3">
-          The backup file was encrypted with a different password (possibly changed on another device).
-          Enter the new password to sync, or keep your local tokens.
+          The backup file was encrypted with a different password (possibly changed on another
+          device). Enter the new password to sync, or keep your local tokens.
         </p>
 
         <div class="space-y-2 mb-3">
@@ -62,15 +75,13 @@
     <Navbar />
     <div class="flex-1 overflow-y-auto px-4 py-4">
       <div class="text-center mb-6">
-        <div class="w-14 h-14 rounded-full bg-indigo-600/20 flex items-center justify-center mx-auto mb-3">
+        <div
+          class="w-14 h-14 rounded-full bg-indigo-600/20 flex items-center justify-center mx-auto mb-3"
+        >
           <CloudArrowUpIcon class="h-7 w-7 text-indigo-400" />
         </div>
-        <h2 class="text-xl font-bold tracking-tight text-white">
-          Sync & Backup
-        </h2>
-        <p class="mt-1 text-xs leading-5 text-gray-400">
-          Sync encrypted tokens to a cloud folder
-        </p>
+        <h2 class="text-xl font-bold tracking-tight text-white">Sync & Backup</h2>
+        <p class="mt-1 text-xs leading-5 text-gray-400">Sync encrypted tokens to a cloud folder</p>
       </div>
 
       <div class="flex-col w-full space-y-3">
@@ -79,9 +90,7 @@
           <div v-if="syncStatus.syncPath" class="text-gray-400 text-xs mb-2 truncate">
             {{ syncStatus.syncPath }}
           </div>
-          <div v-else class="text-gray-500 text-xs mb-2">
-            No folder selected
-          </div>
+          <div v-else class="text-gray-500 text-xs mb-2">No folder selected</div>
           <button
             @click="selectSyncFolder"
             class="w-full rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
@@ -92,9 +101,7 @@
 
         <div class="bg-gray-800 rounded-lg p-3">
           <h3 class="text-white font-medium text-sm mb-1">Sync Password</h3>
-          <p class="text-gray-500 text-xs mb-2">
-            Encrypts your backup for other devices
-          </p>
+          <p class="text-gray-500 text-xs mb-2">Encrypts your backup for other devices</p>
           <div v-if="!showPasswordInput && syncStatus.hasPassword" class="flex items-center gap-2">
             <span class="text-green-400 text-sm">Configured</span>
             <button
@@ -104,7 +111,10 @@
               Change
             </button>
           </div>
-          <div v-if="showPasswordInput && syncStatus.hasPassword" class="bg-yellow-600/10 border border-yellow-600/30 rounded p-2 mb-2">
+          <div
+            v-if="showPasswordInput && syncStatus.hasPassword"
+            class="bg-yellow-600/10 border border-yellow-600/30 rounded p-2 mb-2"
+          >
             <p class="text-yellow-400 text-xs">
               Changing password will require other devices to enter the new password to sync.
             </p>
@@ -142,13 +152,13 @@
               @click="toggleAutoSync"
               :class="[
                 syncStatus.autoSync ? 'bg-indigo-600' : 'bg-gray-600',
-                'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out'
+                'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out',
               ]"
             >
               <span
                 :class="[
                   syncStatus.autoSync ? 'translate-x-4' : 'translate-x-0',
-                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out'
+                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 ]"
               />
             </button>
@@ -166,11 +176,24 @@
             </div>
             <div v-if="syncStatus.enabled" class="flex justify-between">
               <span class="text-gray-400">Background sync:</span>
-              <span :class="syncStatus.passwordMismatch ? 'text-yellow-400' : (syncStatus.autoSync ? 'text-green-400' : 'text-gray-500')">
-                {{ syncStatus.passwordMismatch ? 'Paused' : (syncStatus.autoSync ? 'Active' : 'Off') }}
+              <span
+                :class="
+                  syncStatus.passwordMismatch
+                    ? 'text-yellow-400'
+                    : syncStatus.autoSync
+                      ? 'text-green-400'
+                      : 'text-gray-500'
+                "
+              >
+                {{
+                  syncStatus.passwordMismatch ? 'Paused' : syncStatus.autoSync ? 'Active' : 'Off'
+                }}
               </span>
             </div>
-            <div v-if="syncStatus.passwordMismatch" class="flex justify-between items-center pt-1.5 border-t border-gray-700 mt-1.5">
+            <div
+              v-if="syncStatus.passwordMismatch"
+              class="flex justify-between items-center pt-1.5 border-t border-gray-700 mt-1.5"
+            >
               <span class="text-yellow-400 text-sm">Password mismatch</span>
               <button
                 @click="showPasswordMismatchModal = true"
@@ -187,7 +210,10 @@
               <span class="text-gray-400">Backup tokens:</span>
               <span class="text-gray-300">{{ backupInfo.tokensCount ?? 'Unknown' }}</span>
             </div>
-            <div v-if="remoteUpdate.hasUpdates" class="flex justify-between items-center pt-1.5 border-t border-gray-700 mt-1.5">
+            <div
+              v-if="remoteUpdate.hasUpdates"
+              class="flex justify-between items-center pt-1.5 border-t border-gray-700 mt-1.5"
+            >
               <span class="text-yellow-400 text-sm">Remote update available</span>
               <button
                 @click="showRestoreConfirm"
@@ -226,11 +252,7 @@
         </div>
       </div>
 
-      <Notification
-        :text="notification.text"
-        :type="notification.type"
-        v-if="notification.show"
-      />
+      <Notification :text="notification.text" :type="notification.type" v-if="notification.show" />
     </div>
   </div>
 </template>
