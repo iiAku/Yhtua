@@ -9,7 +9,19 @@
       <template v-else-if="error">
         <div class="flex flex-col items-center gap-4">
           <p class="text-red-400 text-sm font-medium text-center">{{ error }}</p>
+          <template v-if="isKeyLost">
+            <p class="text-gray-400 text-xs text-center max-w-xs">
+              Your encryption key was lost. Tokens must be removed and re-added.
+            </p>
+            <button
+              @click="resetEncryption"
+              class="px-4 py-2 rounded-lg bg-red-800 text-red-200 hover:bg-red-700 transition-colors text-sm"
+            >
+              Reset tokens
+            </button>
+          </template>
           <button
+            v-else
             @click="retry"
             class="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700 transition-colors text-sm"
           >
@@ -133,12 +145,20 @@ const updateToken = async (token: Token) => {
   }
 }
 
+const isKeyLost = computed(() => error.value.toLowerCase().includes('encryption key'))
+
 const retry = async () => {
   if (!token.value) return
   loading.value = true
   error.value = ''
   await updateToken(token.value)
   loading.value = false
+}
+
+const resetEncryption = async () => {
+  store.setState(defaultStore())
+  await initializeEncryption()
+  navigateTo('/')
 }
 
 const copy = async () => {
