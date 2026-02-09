@@ -80,43 +80,25 @@ fn get_fallback_encryption_key() -> [u8; KEY_LEN] {
 }
 
 fn read_fallback_credentials() -> FallbackCredentials {
-    let dir = match get_fallback_path() {
+    let path = match get_credentials_file_path() {
         Ok(p) => p,
         Err(_) => return FallbackCredentials::default(),
     };
 
-    // Try new encrypted format (credentials.enc)
-    let enc_path = dir.join(FALLBACK_CREDS_FILE);
-    if enc_path.exists() {
-        if let Ok(encrypted_content) = fs::read_to_string(&enc_path) {
+    if !path.exists() {
+        return FallbackCredentials::default();
+    }
+
+    match fs::read_to_string(&path) {
+        Ok(encrypted_content) => {
             let key = get_fallback_encryption_key();
-            if let Ok(decrypted) = decrypt_aes256gcm(&encrypted_content, &key) {
-                if let Ok(creds) = serde_json::from_str(&decrypted) {
-                    return creds;
-                }
+            match decrypt_aes256gcm(&encrypted_content, &key) {
+                Ok(decrypted) => serde_json::from_str(&decrypted).unwrap_or_default(),
+                Err(_) => FallbackCredentials::default(),
             }
         }
+        Err(_) => FallbackCredentials::default(),
     }
-
-    // Try legacy plaintext format (credentials.json)
-    let legacy_path = dir.join("credentials.json");
-    if legacy_path.exists() {
-        log::info!("Found legacy credentials.json, attempting migration");
-        if let Ok(content) = fs::read_to_string(&legacy_path) {
-            if let Ok(creds) = serde_json::from_str::<FallbackCredentials>(&content) {
-                let has_data = creds.encryption_key.is_some()
-                    || creds.sync_password.is_some()
-                    || creds.sync_path.is_some();
-                if has_data {
-                    let _ = write_fallback_credentials(&creds);
-                }
-                let _ = fs::remove_file(&legacy_path);
-                return creds;
-            }
-        }
-    }
-
-    FallbackCredentials::default()
 }
 
 fn write_fallback_credentials(creds: &FallbackCredentials) -> Result<(), CryptoError> {

@@ -52,6 +52,10 @@ jobs:
 
       - name: Patch AppImage for Wayland
         if: matrix.platform == 'ubuntu-24.04'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           chmod +x ./scripts/patch-appimage.sh
           ./scripts/patch-appimage.sh
+          APPIMAGE=$(find src-tauri/target/release/bundle/appimage -name "*.AppImage" -type f | head -n1)
+          gh release upload "${{ github.ref_name }}" "$APPIMAGE" --clobber
