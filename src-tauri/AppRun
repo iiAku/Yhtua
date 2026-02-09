@@ -1,21 +1,29 @@
 #!/bin/bash
 # Custom AppRun script for Yhtua
-# Sets LD_PRELOAD for Wayland compatibility when needed
+# Handles Wayland library compatibility and NVIDIA workarounds
 
 SELF=$(readlink -f "$0")
 HERE=${SELF%/*}
 
-# Only set LD_PRELOAD if:
-# 1. We're running on Wayland (XDG_SESSION_TYPE or WAYLAND_DISPLAY)
-# 2. The library file exists
+# Set up library and executable paths
+export PATH="${HERE}/usr/bin:${PATH}"
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export GDK_PIXBUF_MODULEDIR="${HERE}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+export GDK_PIXBUF_MODULE_FILE="${HERE}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+
+# Wayland: ensure system libwayland-client is used over any bundled copy
 if [[ "${XDG_SESSION_TYPE}" == "wayland" || -n "${WAYLAND_DISPLAY}" ]]; then
-    if [[ -f "/usr/lib/libwayland-client.so" ]]; then
-        export LD_PRELOAD=/usr/lib/libwayland-client.so
-    elif [[ -f "/usr/lib/x86_64-linux-gnu/libwayland-client.so" ]]; then
-        # Debian/Ubuntu path
-        export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libwayland-client.so
+    WAYLAND_LIB=$(ldconfig -p 2>/dev/null | grep 'libwayland-client\.so ' | head -n1 | sed 's/.*=> //')
+    if [[ -n "$WAYLAND_LIB" ]]; then
+        export LD_PRELOAD="${WAYLAND_LIB}${LD_PRELOAD:+:$LD_PRELOAD}"
+    fi
+
+    # NVIDIA + Wayland: disable DMABuf renderer to prevent blank screens
+    if [[ -f /proc/driver/nvidia/version ]]; then
+        export WEBKIT_DISABLE_DMABUF_RENDERER=1
     fi
 fi
 
 # Launch the actual application
-exec "${HERE}/yhtua" "$@"
+exec "${HERE}/usr/bin/yhtua" "$@"

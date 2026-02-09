@@ -37,6 +37,10 @@ echo "Extracting to $EXTRACT_DIR..."
 cd "$EXTRACT_DIR"
 "$APPIMAGE" --appimage-extract > /dev/null
 
+# Remove bundled libwayland-client to prevent mismatch with system Mesa/EGL drivers
+echo "Removing bundled libwayland-client..."
+find "$EXTRACT_DIR/squashfs-root" -name "libwayland-client.so*" -delete 2>/dev/null || true
+
 # Replace AppRun with our custom one
 echo "Replacing AppRun with custom version..."
 cp "$CUSTOM_APPRUN" "$EXTRACT_DIR/squashfs-root/AppRun"
