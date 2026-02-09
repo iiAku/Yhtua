@@ -49,3 +49,9 @@ jobs:
           releaseBody: 'See the assets to download and install this version.'
           releaseDraft: true
           prerelease: false
+
+      - name: Patch AppImage for Wayland
+        if: matrix.platform == 'ubuntu-24.04'
+        run: |
+          chmod +x ./scripts/patch-appimage.sh
+          ./scripts/patch-appimage.sh
