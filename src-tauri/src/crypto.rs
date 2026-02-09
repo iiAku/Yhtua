@@ -141,19 +141,27 @@ fn get_keyring_entry(name: &str) -> Result<Entry, CryptoError> {
 }
 
 fn get_credential(name: &str) -> Option<String> {
-    if let Ok(entry) = get_keyring_entry(name) {
-        if let Ok(value) = entry.get_password() {
-            return Some(value);
-        }
+    match get_keyring_entry(name) {
+        Ok(entry) => match entry.get_password() {
+            Ok(value) => return Some(value),
+            Err(e) => log::warn!("Keyring get_password failed for '{}': {}", name, e),
+        },
+        Err(e) => log::warn!("Keyring entry creation failed for '{}': {}", name, e),
     }
 
+    log::info!("Trying fallback credentials for '{}'", name);
     let creds = read_fallback_credentials();
-    match name {
+    let result = match name {
         KEYCHAIN_KEY_NAME => creds.encryption_key,
         KEYCHAIN_SYNC_PASSWORD => creds.sync_password,
         KEYCHAIN_SYNC_PATH => creds.sync_path,
         _ => None,
+    };
+
+    if result.is_none() {
+        log::warn!("Fallback credentials also missing for '{}'", name);
     }
+    result
 }
 
 fn store_credential(name: &str, value: &str) -> Result<(), CryptoError> {

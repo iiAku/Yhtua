@@ -8,7 +8,7 @@
 
       <template v-else-if="error">
         <div class="flex flex-col items-center gap-4">
-          <p class="text-red-400 text-sm font-medium text-center">Failed to generate token</p>
+          <p class="text-red-400 text-sm font-medium text-center">{{ error }}</p>
           <button
             @click="retry"
             class="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700 transition-colors text-sm"
@@ -96,7 +96,7 @@ const route = useRoute()
 const copied = ref(false)
 const copyError = ref(false)
 const loading = ref(true)
-const error = ref(false)
+const error = ref('')
 
 const token = ref<Token | undefined>(
   store.getState().tokens.find((token) => token.id === route.params.id),
@@ -126,17 +126,17 @@ const updateToken = async (token: Token) => {
     const { value, remainingTime } = await getToken(token.otp)
     renderedToken.value = value
     renderedToken.remainingTime = remainingTime
-    error.value = false
+    error.value = ''
   } catch (e) {
     console.error('Failed to generate token:', e)
-    error.value = true
+    error.value = e instanceof Error ? e.message : String(e)
   }
 }
 
 const retry = async () => {
   if (!token.value) return
   loading.value = true
-  error.value = false
+  error.value = ''
   await updateToken(token.value)
   loading.value = false
 }
