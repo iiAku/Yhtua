@@ -13,17 +13,19 @@ export GDK_PIXBUF_MODULEDIR="${HERE}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"
 export GDK_PIXBUF_MODULE_FILE="${HERE}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
 
 # Wayland: ensure system libwayland-client is used over any bundled copy
+# The AppImage-bundled libwayland-client conflicts with the system compositor,
+# causing "Could not create default EGL display: EGL_BAD_PARAMETER" crashes.
+# LD_PRELOAD must be set before exec — cannot be fixed from inside the app.
 if [[ "${XDG_SESSION_TYPE}" == "wayland" || -n "${WAYLAND_DISPLAY}" ]]; then
     WAYLAND_LIB=$(ldconfig -p 2>/dev/null | grep 'libwayland-client\.so ' | head -n1 | sed 's/.*=> //')
     if [[ -n "$WAYLAND_LIB" ]]; then
         export LD_PRELOAD="${WAYLAND_LIB}${LD_PRELOAD:+:$LD_PRELOAD}"
     fi
-
-    # NVIDIA + Wayland: disable DMABuf renderer to prevent blank screens
-    if [[ -f /proc/driver/nvidia/version ]]; then
-        export WEBKIT_DISABLE_DMABUF_RENDERER=1
-    fi
 fi
+
+# Disable DMABuf renderer to prevent EGL failures across all GPU drivers.
+# Affects NVIDIA, AMD, and Intel — not just NVIDIA.
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 # Launch the actual application
 exec "${HERE}/usr/bin/yhtua" "$@"

@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-gray-900 h-screen flex flex-col overflow-hidden">
+  <div class="bg-vault-base h-screen flex flex-col overflow-hidden">
     <DangerModal
       :type="modal.Danger.type"
       :title="modal.Danger.title"
@@ -13,14 +13,15 @@
     <div class="flex-1 overflow-y-auto px-4 py-4">
       <div class="text-center mb-6">
         <div
-          class="w-14 h-14 rounded-full bg-gray-700 flex items-center justify-center mx-auto mb-3"
+          class="w-14 h-14 rounded-2xl border flex items-center justify-center mx-auto mb-3"
+          :class="avatarBgClass(token?.otp.label ?? '')"
         >
-          <span class="text-xl font-medium text-white">{{
+          <span class="text-lg font-bold" :class="avatarTextClass(token?.otp.label ?? '')">{{
             getAvatarPlaceholder(token?.otp.label ?? '')
           }}</span>
         </div>
-        <h2 class="text-xl font-bold tracking-tight text-white">Edit Token</h2>
-        <p class="mt-1 text-xs leading-5 text-gray-400">
+        <h2 class="text-lg font-bold tracking-tight text-vault-text">Edit Token</h2>
+        <p class="mt-1 text-xs text-vault-text-secondary">
           {{ token?.otp.label }}
         </p>
       </div>
@@ -29,7 +30,7 @@
         <input
           v-if="token"
           v-model="token.otp.label"
-          class="w-full rounded-lg border-0 bg-gray-800 px-3 py-2 text-white text-sm placeholder:text-gray-500 ring-1 ring-inset ring-gray-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+          class="w-full rounded-xl border-0 bg-vault-elevated px-3.5 py-2.5 text-vault-text text-sm font-medium placeholder:text-vault-text-muted ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-accent/40 transition-all"
           placeholder="Token name"
         />
 
@@ -37,17 +38,49 @@
           <input
             v-model="secretValue"
             :type="showSecret ? 'text' : 'password'"
-            class="w-full rounded-lg border-0 bg-gray-800 px-3 py-2 pr-10 text-white text-sm font-mono placeholder:text-gray-500 ring-1 ring-inset ring-gray-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+            class="w-full rounded-xl border-0 bg-vault-elevated px-3.5 py-2.5 pr-10 text-vault-text text-sm font-mono placeholder:text-vault-text-muted ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-accent/40 transition-all"
             placeholder="Secret key"
             @input="secretValue = secretValue.toUpperCase()"
           />
           <button
             type="button"
-            class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-white"
+            class="absolute inset-y-0 right-0 flex items-center pr-3 text-vault-text-muted hover:text-vault-text-secondary transition-colors"
+            aria-label="Toggle secret visibility"
             @click="showSecret = !showSecret"
           >
-            <EyeSlashIcon v-if="showSecret" class="h-5 w-5" />
-            <EyeIcon v-else class="h-5 w-5" />
+            <svg
+              v-if="showSecret"
+              class="h-4.5 w-4.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88"
+              />
+            </svg>
+            <svg
+              v-else
+              class="h-4.5 w-4.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+              />
+            </svg>
           </button>
         </div>
 
@@ -56,16 +89,16 @@
         <button
           v-if="token"
           type="button"
-          class="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+          class="w-full rounded-xl bg-vault-accent px-3.5 py-2.5 text-sm font-semibold text-vault-base hover:bg-vault-accent-hover transition-colors"
           @click="saveToken(token)"
         >
           Save Changes
         </button>
 
-        <div class="pt-3 border-t border-gray-700">
+        <div class="pt-3 border-t border-vault-border">
           <button
             type="button"
-            class="w-full rounded-lg bg-red-600/20 px-3 py-2 text-sm font-semibold text-red-400 ring-1 ring-inset ring-red-600/30 hover:bg-red-600/30"
+            class="w-full rounded-xl bg-vault-danger-subtle px-3.5 py-2.5 text-sm font-medium text-vault-danger ring-1 ring-inset ring-vault-danger/20 hover:bg-vault-danger/15 transition-colors"
             @click="showRemoveDialogue()"
           >
             Delete Token
@@ -83,7 +116,6 @@
 </template>
 
 <script setup lang="ts">
-import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { ref } from 'vue'
 import { decryptSecret, encryptSecret } from '~/composables/useCrypto'
 

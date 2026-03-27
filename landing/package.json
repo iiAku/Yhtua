@@ -1,0 +1,16 @@
+{
+  "name": "yhtua-landing",
+  "version": "2.5.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "astro": "^5.8.4",
+    "tailwindcss": "^4.2.2"
+  }
+}

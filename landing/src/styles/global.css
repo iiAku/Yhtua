@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --color-base: #06070a;
+  --color-surface: #0d0f14;
+  --color-elevated: #13161d;
+  --color-hover: #1a1d26;
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-hover: rgba(255, 255, 255, 0.1);
+
+  --color-fg: #e8eaef;
+  --color-fg-muted: #6b7084;
+  --color-fg-subtle: #3a3f52;
+
+  --color-amber: #d4a54a;
+  --color-amber-dim: #b8903e;
+  --color-amber-glow: rgba(212, 165, 74, 0.08);
+  --color-amber-glow-strong: rgba(212, 165, 74, 0.15);
+
+  --color-emerald: #34d399;
+  --color-emerald-dim: #2ab882;
+  --color-emerald-glow: rgba(52, 211, 153, 0.08);
+}
+
+html {
+  scroll-behavior: smooth;
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+::selection {
+  background-color: var(--color-amber-glow-strong);
+  color: var(--color-fg);
+}
+
+/* TOTP digit animation */
+@keyframes digit-flip {
+  0%, 90% { opacity: 1; transform: translateY(0); }
+  95% { opacity: 0; transform: translateY(-8px); }
+  96% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ring-countdown {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: 339.292; }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.animate-fade-in { animation: fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.delay-1 { animation-delay: 0.1s; }
+.delay-2 { animation-delay: 0.2s; }
+.delay-3 { animation-delay: 0.3s; }
+.delay-4 { animation-delay: 0.4s; }
+.delay-5 { animation-delay: 0.5s; }

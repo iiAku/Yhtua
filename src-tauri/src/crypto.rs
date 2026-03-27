@@ -71,7 +71,7 @@ fn get_fallback_encryption_key() -> [u8; KEY_LEN] {
     let mut key = [0u8; KEY_LEN];
     pbkdf2::derive(
         pbkdf2::PBKDF2_HMAC_SHA256,
-        NonZeroU32::new(10_000).unwrap(),
+        NonZeroU32::new(PBKDF2_ITERATIONS).unwrap(),
         salt,
         device_id.as_bytes(),
         &mut key,

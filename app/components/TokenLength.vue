@@ -14,9 +14,9 @@
           class="cursor-pointer focus:outline-none"
           :class="[
             checked
-              ? 'bg-indigo-600 text-white ring-indigo-600'
-              : 'bg-gray-800 text-gray-400 ring-gray-700 hover:bg-gray-700',
-            'flex items-center justify-center rounded-lg py-2 px-3 text-sm font-medium ring-1 ring-inset transition-colors',
+              ? 'bg-vault-accent text-vault-base ring-vault-accent font-semibold'
+              : 'bg-vault-elevated text-vault-text-secondary ring-vault-border hover:bg-vault-hover hover:text-vault-text',
+            'flex items-center justify-center rounded-xl py-2.5 px-3 text-sm font-medium ring-1 ring-inset transition-all',
           ]"
         >
           <RadioGroupLabel as="span">{{ option.name }}</RadioGroupLabel>

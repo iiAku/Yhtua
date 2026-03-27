@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-gray-900 h-screen flex flex-col overflow-hidden">
+  <div class="bg-vault-base h-screen flex flex-col overflow-hidden">
     <DangerModal
       :type="modal.Danger.type"
       :title="modal.Danger.title"
@@ -10,64 +10,73 @@
       @close-modal="closeModal"
     />
 
+    <!-- Password Mismatch Modal -->
     <div
       v-if="showPasswordMismatchModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
     >
-      <div class="bg-gray-800 rounded-lg p-4 mx-4 max-w-sm w-full">
-        <div class="flex items-center gap-2 mb-3">
-          <div class="w-8 h-8 rounded-full bg-yellow-600/20 flex items-center justify-center">
+      <div
+        class="bg-vault-surface border border-vault-border rounded-2xl p-5 mx-4 max-w-sm w-full shadow-2xl shadow-black/30"
+      >
+        <div class="flex items-center gap-3 mb-4">
+          <div
+            class="w-10 h-10 rounded-xl bg-vault-warning-subtle border border-vault-warning/20 flex items-center justify-center"
+          >
             <svg
-              class="w-4 h-4 text-yellow-400"
+              class="w-5 h-5 text-vault-warning"
               fill="none"
-              stroke="currentColor"
               viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
             >
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
               />
             </svg>
           </div>
-          <h3 class="text-white font-semibold text-sm">Password Changed</h3>
+          <div>
+            <h3 class="text-vault-text font-semibold text-sm">Password Changed</h3>
+            <p class="text-vault-text-secondary text-xs">
+              Backup encrypted with a different password
+            </p>
+          </div>
         </div>
 
-        <p class="text-gray-400 text-xs mb-3">
-          The backup file was encrypted with a different password (possibly changed on another
-          device). Enter the new password to sync, or keep your local tokens.
+        <p class="text-vault-text-secondary text-xs mb-3 leading-relaxed">
+          Enter the new password to sync, or keep your local tokens.
         </p>
 
-        <div class="space-y-2 mb-3">
+        <div class="space-y-2 mb-4">
           <input
             v-model="recoveryPassword"
             type="password"
             placeholder="Enter new sync password"
-            class="w-full rounded-md border-0 bg-white/5 px-3 py-1.5 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 text-sm"
+            class="w-full rounded-xl border-0 bg-vault-elevated px-3.5 py-2.5 text-vault-text text-sm ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-indigo/40 placeholder:text-vault-text-muted transition-all"
             @keyup.enter="tryRecoverWithPassword"
           />
-          <p v-if="recoveryError" class="text-red-400 text-xs">{{ recoveryError }}</p>
+          <p v-if="recoveryError" class="text-vault-danger text-xs">{{ recoveryError }}</p>
         </div>
 
         <div class="flex gap-2">
           <button
-            @click="tryRecoverWithPassword"
-            :disabled="!recoveryPassword || recovering"
-            class="flex-1 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {{ recovering ? 'Syncing...' : 'Sync' }}
-          </button>
-          <button
             @click="keepLocalAndDisableSync"
-            class="flex-1 rounded-md bg-gray-700 px-3 py-1.5 text-sm font-semibold text-gray-300 shadow-sm hover:bg-gray-600"
+            class="flex-1 rounded-xl bg-vault-elevated border border-vault-border px-3.5 py-2.5 text-sm font-medium text-vault-text-secondary hover:text-vault-text transition-colors"
           >
             Keep Local
           </button>
+          <button
+            @click="tryRecoverWithPassword"
+            :disabled="!recoveryPassword || recovering"
+            class="flex-1 rounded-xl bg-vault-indigo px-3.5 py-2.5 text-sm font-semibold text-vault-base hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {{ recovering ? 'Syncing...' : 'Sync' }}
+          </button>
         </div>
 
-        <p class="text-gray-500 text-xs mt-2 text-center">
-          "Keep Local" will disable sync and preserve your current tokens.
+        <p class="text-vault-text-muted text-xs mt-3 text-center">
+          "Keep Local" disables sync and preserves your current tokens.
         </p>
       </div>
     </div>
@@ -76,46 +85,65 @@
     <div class="flex-1 overflow-y-auto px-4 py-4">
       <div class="text-center mb-6">
         <div
-          class="w-14 h-14 rounded-full bg-indigo-600/20 flex items-center justify-center mx-auto mb-3"
+          class="w-14 h-14 rounded-2xl bg-vault-indigo-subtle border border-vault-indigo/10 flex items-center justify-center mx-auto mb-3"
         >
-          <CloudArrowUpIcon class="h-7 w-7 text-indigo-400" />
+          <svg
+            class="h-7 w-7 text-vault-indigo"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z"
+            />
+          </svg>
         </div>
-        <h2 class="text-xl font-bold tracking-tight text-white">Sync & Backup</h2>
-        <p class="mt-1 text-xs leading-5 text-gray-400">Sync encrypted tokens to a cloud folder</p>
+        <h2 class="text-lg font-bold tracking-tight text-vault-text">Sync & Backup</h2>
+        <p class="mt-1 text-xs text-vault-text-secondary">
+          Sync encrypted tokens to a cloud folder
+        </p>
       </div>
 
-      <div class="flex-col w-full space-y-3">
-        <div class="bg-gray-800 rounded-lg p-3">
-          <h3 class="text-white font-medium text-sm mb-1">Sync Folder</h3>
-          <div v-if="syncStatus.syncPath" class="text-gray-400 text-xs mb-2 truncate">
+      <div class="flex-col w-full space-y-2.5">
+        <!-- Sync Folder -->
+        <div class="bg-vault-elevated rounded-xl p-3.5 border border-vault-border">
+          <h3 class="text-vault-text font-semibold text-sm mb-1">Sync Folder</h3>
+          <div
+            v-if="syncStatus.syncPath"
+            class="text-vault-text-secondary text-xs mb-2.5 truncate font-mono"
+          >
             {{ syncStatus.syncPath }}
           </div>
-          <div v-else class="text-gray-500 text-xs mb-2">No folder selected</div>
+          <div v-else class="text-vault-text-muted text-xs mb-2.5">No folder selected</div>
           <button
             @click="selectSyncFolder"
-            class="w-full rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+            class="w-full rounded-xl bg-vault-accent px-3.5 py-2 text-sm font-semibold text-vault-base hover:bg-vault-accent-hover transition-colors"
           >
             {{ syncStatus.syncPath ? 'Change Folder' : 'Choose Folder' }}
           </button>
         </div>
 
-        <div class="bg-gray-800 rounded-lg p-3">
-          <h3 class="text-white font-medium text-sm mb-1">Sync Password</h3>
-          <p class="text-gray-500 text-xs mb-2">Encrypts your backup for other devices</p>
+        <!-- Sync Password -->
+        <div class="bg-vault-elevated rounded-xl p-3.5 border border-vault-border">
+          <h3 class="text-vault-text font-semibold text-sm mb-1">Sync Password</h3>
+          <p class="text-vault-text-muted text-xs mb-2.5">Encrypts your backup for other devices</p>
           <div v-if="!showPasswordInput && syncStatus.hasPassword" class="flex items-center gap-2">
-            <span class="text-green-400 text-sm">Configured</span>
+            <span class="text-vault-success text-sm font-medium">Configured</span>
             <button
               @click="showPasswordInput = true"
-              class="text-indigo-400 text-sm hover:text-indigo-300"
+              class="text-vault-accent text-sm hover:text-vault-accent-hover font-medium transition-colors"
             >
               Change
             </button>
           </div>
           <div
             v-if="showPasswordInput && syncStatus.hasPassword"
-            class="bg-yellow-600/10 border border-yellow-600/30 rounded p-2 mb-2"
+            class="bg-vault-warning-subtle border border-vault-warning/20 rounded-lg p-2.5 mb-2.5"
           >
-            <p class="text-yellow-400 text-xs">
+            <p class="text-vault-warning text-xs">
               Changing password will require other devices to enter the new password to sync.
             </p>
           </div>
@@ -124,36 +152,48 @@
               v-model="password"
               type="password"
               placeholder="Enter sync password"
-              class="w-full rounded-md border-0 bg-white/5 px-3 py-1.5 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 text-sm"
+              class="w-full rounded-xl border-0 bg-vault-input px-3.5 py-2.5 text-vault-text text-sm ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-indigo/40 placeholder:text-vault-text-muted transition-all"
             />
             <input
               v-model="passwordConfirm"
               type="password"
               placeholder="Confirm password"
-              class="w-full rounded-md border-0 bg-white/5 px-3 py-1.5 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 text-sm"
+              class="w-full rounded-xl border-0 bg-vault-input px-3.5 py-2.5 text-vault-text text-sm ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-indigo/40 placeholder:text-vault-text-muted transition-all"
             />
+            <p v-if="password && password.length < 8" class="text-vault-warning text-xs">
+              Password must be at least 8 characters
+            </p>
+            <p
+              v-else-if="password && passwordConfirm && password !== passwordConfirm"
+              class="text-vault-danger text-xs"
+            >
+              Passwords do not match
+            </p>
             <button
               @click="savePassword"
-              :disabled="!password || password !== passwordConfirm"
-              class="w-full rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="!password || password.length < 8 || password !== passwordConfirm"
+              class="w-full rounded-xl bg-vault-accent px-3.5 py-2 text-sm font-semibold text-vault-base hover:bg-vault-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Save Password
             </button>
           </div>
         </div>
 
-        <div class="bg-gray-800 rounded-lg p-3">
+        <!-- Auto Sync Toggle -->
+        <div class="bg-vault-elevated rounded-xl p-3.5 border border-vault-border">
           <div class="flex items-center justify-between">
             <div>
-              <h3 class="text-white font-medium text-sm">Auto Sync</h3>
-              <p class="text-gray-500 text-xs">Sync when tokens change</p>
+              <h3 class="text-vault-text font-semibold text-sm">Auto Sync</h3>
+              <p class="text-vault-text-muted text-xs">Sync when tokens change</p>
             </div>
             <button
               @click="toggleAutoSync"
               :class="[
-                syncStatus.autoSync ? 'bg-indigo-600' : 'bg-gray-600',
+                syncStatus.autoSync ? 'bg-vault-indigo' : 'bg-vault-hover',
                 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out',
               ]"
+              role="switch"
+              :aria-checked="syncStatus.autoSync"
             >
               <span
                 :class="[
@@ -165,25 +205,30 @@
           </div>
         </div>
 
-        <div class="bg-gray-800 rounded-lg p-3">
-          <h3 class="text-white font-medium text-sm mb-1">Status</h3>
-          <div class="space-y-0.5 text-xs">
+        <!-- Status -->
+        <div class="bg-vault-elevated rounded-xl p-3.5 border border-vault-border">
+          <h3 class="text-vault-text font-semibold text-sm mb-2">Status</h3>
+          <div class="space-y-1.5 text-xs">
             <div class="flex justify-between">
-              <span class="text-gray-400">Sync enabled:</span>
-              <span :class="syncStatus.enabled ? 'text-green-400' : 'text-gray-500'">
+              <span class="text-vault-text-secondary">Sync enabled</span>
+              <span
+                :class="syncStatus.enabled ? 'text-vault-success' : 'text-vault-text-muted'"
+                class="font-medium"
+              >
                 {{ syncStatus.enabled ? 'Yes' : 'No' }}
               </span>
             </div>
             <div v-if="syncStatus.enabled" class="flex justify-between">
-              <span class="text-gray-400">Background sync:</span>
+              <span class="text-vault-text-secondary">Background sync</span>
               <span
                 :class="
                   syncStatus.passwordMismatch
-                    ? 'text-yellow-400'
+                    ? 'text-vault-warning'
                     : syncStatus.autoSync
-                      ? 'text-green-400'
-                      : 'text-gray-500'
+                      ? 'text-vault-success'
+                      : 'text-vault-text-muted'
                 "
+                class="font-medium"
               >
                 {{
                   syncStatus.passwordMismatch ? 'Paused' : syncStatus.autoSync ? 'Active' : 'Off'
@@ -192,32 +237,34 @@
             </div>
             <div
               v-if="syncStatus.passwordMismatch"
-              class="flex justify-between items-center pt-1.5 border-t border-gray-700 mt-1.5"
+              class="flex justify-between items-center pt-2 border-t border-vault-border mt-2"
             >
-              <span class="text-yellow-400 text-sm">Password mismatch</span>
+              <span class="text-vault-warning font-medium">Password mismatch</span>
               <button
                 @click="showPasswordMismatchModal = true"
-                class="text-xs px-2 py-0.5 bg-yellow-600 rounded text-white hover:bg-yellow-500"
+                class="text-xs px-2.5 py-1 bg-vault-warning rounded-lg text-vault-base font-semibold hover:opacity-90 transition-opacity"
               >
                 Fix
               </button>
             </div>
             <div v-if="syncStatus.lastSync" class="flex justify-between">
-              <span class="text-gray-400">Last synced:</span>
-              <span class="text-gray-300">{{ formatDate(syncStatus.lastSync) }}</span>
+              <span class="text-vault-text-secondary">Last synced</span>
+              <span class="text-vault-text font-mono">{{ formatDate(syncStatus.lastSync) }}</span>
             </div>
             <div v-if="backupInfo?.exists" class="flex justify-between">
-              <span class="text-gray-400">Backup tokens:</span>
-              <span class="text-gray-300">{{ backupInfo.tokensCount ?? 'Unknown' }}</span>
+              <span class="text-vault-text-secondary">Backup tokens</span>
+              <span class="text-vault-text font-mono">{{
+                backupInfo.tokensCount ?? 'Unknown'
+              }}</span>
             </div>
             <div
               v-if="remoteUpdate.hasUpdates"
-              class="flex justify-between items-center pt-1.5 border-t border-gray-700 mt-1.5"
+              class="flex justify-between items-center pt-2 border-t border-vault-border mt-2"
             >
-              <span class="text-yellow-400 text-sm">Remote update available</span>
+              <span class="text-vault-warning font-medium">Remote update available</span>
               <button
                 @click="showRestoreConfirm"
-                class="text-xs px-2 py-0.5 bg-yellow-600 rounded text-white hover:bg-yellow-500"
+                class="text-xs px-2.5 py-1 bg-vault-warning rounded-lg text-vault-base font-semibold hover:opacity-90 transition-opacity"
               >
                 Load
               </button>
@@ -225,27 +272,29 @@
           </div>
         </div>
 
+        <!-- Action Buttons -->
         <div class="flex gap-2" v-if="syncStatus.enabled">
           <button
             @click="syncNow"
             :disabled="syncing"
-            class="flex-1 rounded-md bg-green-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-green-500 disabled:opacity-50"
+            class="flex-1 rounded-xl bg-vault-success/90 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-vault-success disabled:opacity-40 transition-colors"
           >
             {{ syncing ? 'Syncing...' : 'Sync Now' }}
           </button>
           <button
             v-if="backupInfo?.exists"
             @click="showRestoreConfirm"
-            class="flex-1 rounded-md bg-yellow-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500"
+            class="flex-1 rounded-xl bg-vault-warning/90 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-vault-warning transition-colors"
           >
             Restore
           </button>
         </div>
 
-        <div v-if="syncStatus.enabled" class="pt-3 border-t border-gray-700">
+        <!-- Disable Sync -->
+        <div v-if="syncStatus.enabled" class="pt-3 border-t border-vault-border">
           <button
             @click="showDisableConfirm"
-            class="w-full rounded-md bg-red-600/20 px-3 py-1.5 text-sm font-semibold text-red-400 ring-1 ring-inset ring-red-600/30 hover:bg-red-600/30"
+            class="w-full rounded-xl bg-vault-danger-subtle px-3.5 py-2.5 text-sm font-medium text-vault-danger ring-1 ring-inset ring-vault-danger/15 hover:bg-vault-danger/15 transition-colors"
           >
             Disable Sync
           </button>
@@ -258,7 +307,6 @@
 </template>
 
 <script setup lang="ts">
-import { CloudArrowUpIcon } from '@heroicons/vue/24/outline'
 import {
   checkForRemoteUpdates,
   configureSyncPassword,

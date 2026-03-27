@@ -1,7 +1,9 @@
 import * as OTPAuth from 'otpauth'
 import { decryptSecret, encryptSecret } from './useCrypto'
 
-const secretCache = new Map<string, string>()
+const SECRET_CACHE_TTL_MS = 5 * 60 * 1000
+
+const secretCache = new Map<string, { value: string; expiresAt: number }>()
 
 export const getCachedSecret = async (
   encryptedSecret: string,
@@ -10,10 +12,13 @@ export const getCachedSecret = async (
   if (!encrypted) return encryptedSecret
 
   const cached = secretCache.get(encryptedSecret)
-  if (cached) return cached
+  if (cached && Date.now() < cached.expiresAt) return cached.value
 
   const decrypted = await decryptSecret(encryptedSecret)
-  secretCache.set(encryptedSecret, decrypted)
+  secretCache.set(encryptedSecret, {
+    value: decrypted,
+    expiresAt: Date.now() + SECRET_CACHE_TTL_MS,
+  })
   return decrypted
 }
 
@@ -69,10 +74,7 @@ export const getToken = async ({
   throw new Error('Failed to generate valid token after retries')
 }
 
-const randomId = () =>
-  Date.now().toString(36) +
-  Math.random().toString(36).substring(2, 15) +
-  Math.random().toString(36).substring(2, 15)
+const randomId = () => crypto.randomUUID()
 
 export const createNewToken = async (
   secret: string,
