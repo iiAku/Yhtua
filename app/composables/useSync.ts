@@ -9,6 +9,7 @@ import {
   deleteSyncPath,
   encryptSecret,
   encryptWithPassword,
+  ensureEncryptionKey,
   getSyncPassword,
   getSyncPath,
   hasSyncPassword,
@@ -172,6 +173,8 @@ export const syncToFile = async (): Promise<SyncResult> => {
       }
     }
 
+    await ensureEncryptionKey()
+
     const syncPath = getSyncPath()
     const password = getSyncPassword()
     const filePath = await getBackupFilePath()
@@ -314,6 +317,8 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
         errorCode: SyncErrorCode.InvalidFormat,
       }
     }
+
+    await ensureEncryptionKey()
 
     const reEncryptedTokens = await Promise.all(
       validationResult.data.tokens.map(async (token: Token) => ({
@@ -487,6 +492,7 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
     }
 
     storeSyncPassword(password)
+    await ensureEncryptionKey()
 
     const reEncryptedTokens = await Promise.all(
       validationResult.data.tokens.map(async (token: Token) => ({
