@@ -37,6 +37,58 @@ const parseAndValidate = <T extends z.ZodType>(
   }
 }
 
+let pendingEncryptedData: string | null = null
+
+export const hasPendingEncryptedImport = (): boolean => pendingEncryptedData !== null
+
+export const clearPendingEncryptedImport = (): void => {
+  pendingEncryptedData = null
+}
+
+export const completePendingEncryptedImport = async (
+  password: string,
+): Promise<{ success: boolean; error?: string; tokensCount?: number }> => {
+  if (!pendingEncryptedData) return { success: false, error: 'No pending import' }
+
+  let decryptedData: unknown
+  try {
+    const decryptedJson = await decryptWithPassword(pendingEncryptedData, password)
+    decryptedData = JSON.parse(decryptedJson)
+  } catch {
+    return { success: false, error: 'Wrong password or corrupted file' }
+  }
+
+  const validationResult = exportImportSchema.safeParse(decryptedData)
+  if (!validationResult.success) {
+    return { success: false, error: 'Invalid backup data structure' }
+  }
+
+  try {
+    await initializeEncryption()
+
+    const reEncryptedTokens = await Promise.all(
+      validationResult.data.tokens.map(async (token: Token) => ({
+        ...token,
+        otp: {
+          ...token.otp,
+          secret: await encryptSecret(token.otp.secret),
+          encrypted: true,
+        },
+      })),
+    )
+
+    storeAddToken(reEncryptedTokens)
+    pendingEncryptedData = null
+
+    return { success: true, tokensCount: reEncryptedTokens.length }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Encryption error',
+    }
+  }
+}
+
 const getPlaintextSecret = async (token: Token): Promise<string> => {
   if (token.otp.encrypted) {
     return await decryptSecret(token.otp.secret)
@@ -304,6 +356,14 @@ export const importTokens = async (
     }
     const jsonContent = await readTextFile(jsonPath)
 
+    // Detect encrypted backup (sync or export) — return for caller to handle password
+    const encryptedResult = parseAndValidate(jsonContent, encryptedExportSchema)
+    if (encryptedResult.success) {
+      pendingEncryptedData = encryptedResult.data.data
+      return
+    }
+
+    // Unencrypted backup
     const result = parseAndValidate(jsonContent, exportImportSchema)
 
     if (!result.success) {
