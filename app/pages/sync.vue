@@ -186,11 +186,7 @@
             <div class="flex gap-2">
               <button
                 v-if="syncStatus.hasPassword"
-                @click="
-                  showPasswordInput = false
-                  password = ''
-                  passwordConfirm = ''
-                "
+                @click="cancelPasswordChange"
                 class="flex-1 rounded-xl bg-vault-elevated px-3.5 py-2 text-sm font-medium text-vault-text-secondary ring-1 ring-inset ring-vault-border hover:bg-vault-hover transition-colors"
               >
                 Cancel
@@ -374,6 +370,12 @@ const backupInfo = ref<{
 const password = ref('')
 const passwordConfirm = ref('')
 const showPasswordInput = ref(false)
+
+const cancelPasswordChange = () => {
+  showPasswordInput.value = false
+  password.value = ''
+  passwordConfirm.value = ''
+}
 const syncing = ref(false)
 const modalAction = ref<'restore' | 'disable' | null>(null)
 const remoteUpdate = ref<{ hasUpdates: boolean; remoteVersion: number | null }>({

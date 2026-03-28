@@ -98,7 +98,7 @@
                 fill="none"
                 stroke-width="3"
                 stroke-linecap="round"
-                class="transition-all duration-1000 ease-linear"
+                class="transition-[stroke-dashoffset] duration-1000 ease-linear"
                 :class="
                   renderedToken.remainingTime <= 5
                     ? 'text-vault-danger'

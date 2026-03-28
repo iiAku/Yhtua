@@ -68,21 +68,17 @@ body::before {
 }
 
 /* Page transitions */
-.page-enter-active,
+.page-enter-active {
+  transition: opacity 0.08s ease-out;
+}
+
 .page-leave-active {
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+  transition: opacity 0.06s ease-in;
 }
 
-.page-enter-from {
-  opacity: 0;
-  transform: translateY(6px);
-}
-
+.page-enter-from,
 .page-leave-to {
   opacity: 0;
-  transform: translateY(-6px);
 }
 
 /* Circular timer animation */
