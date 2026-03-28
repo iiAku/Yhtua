@@ -62,14 +62,24 @@ export const cleanupInvalidTokens = () => {
 }
 
 let cachedTokens: Token[] = []
-let lastTokensState: Token[] = []
+let lastTokensRef: Token[] = []
+let lastUsedSnapshot = ''
+
+const getLastUsedKey = (tokens: Token[]) =>
+  tokens.map((t) => `${t.id}:${t.lastUsed ?? 0}`).join(',')
 
 const updateCachedTokens = () => {
   const tokens = store.getState().tokens
-  if (tokens !== lastTokensState) {
-    lastTokensState = tokens
+  if (tokens === lastTokensRef) return
+
+  const usedKey = getLastUsedKey(tokens)
+  if (tokens.length !== lastTokensRef.length || usedKey !== lastUsedSnapshot) {
     cachedTokens = tokens.toSorted((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0))
+    lastUsedSnapshot = usedKey
+  } else {
+    cachedTokens = tokens
   }
+  lastTokensRef = tokens
 }
 
 store.subscribe(updateCachedTokens)

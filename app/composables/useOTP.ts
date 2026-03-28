@@ -1,7 +1,7 @@
 import * as OTPAuth from 'otpauth'
 import { decryptSecret, encryptSecret } from './useCrypto'
 
-const SECRET_CACHE_TTL_MS = 5 * 60 * 1000
+const SECRET_CACHE_TTL_MS = 30 * 1000
 
 const secretCache = new Map<string, { value: string; expiresAt: number }>()
 
@@ -23,6 +23,12 @@ export const getCachedSecret = async (
 }
 
 export const clearSecretCache = () => secretCache.clear()
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearSecretCache()
+  })
+}
 
 export const getRemainingTime = (period: number = 30) =>
   period - (Math.floor(Date.now() / 1000) % period)
@@ -47,7 +53,7 @@ export const getToken = async ({
   value: string
   remainingTime: number
 }> => {
-  const MAX_RETRIES = 5
+  const MAX_RETRIES = 3
 
   const plaintextSecret = await getCachedSecret(secret, encrypted)
 
@@ -68,13 +74,21 @@ export const getToken = async ({
       return { value, remainingTime: getRemainingTime(period) }
     }
 
-    await useSleep(attempt * 50)
+    await useSleep(attempt * 10)
   }
 
   throw new Error('Failed to generate valid token after retries')
 }
 
 const randomId = () => crypto.randomUUID()
+
+export const isDuplicateSecret = (secret: string): Token | undefined =>
+  getTokens().find(
+    (token) => !token.otp.encrypted && token.otp.secret.toUpperCase() === secret.toUpperCase(),
+  )
+
+export const isDuplicateLabel = (label: string): Token | undefined =>
+  getTokens().find((token) => token.otp.label.toLowerCase() === label.toLowerCase())
 
 export const createNewToken = async (
   secret: string,

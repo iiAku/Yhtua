@@ -13,8 +13,10 @@ import {
   getSyncPath,
   hasSyncPassword,
   hasSyncPath,
+  signBackup,
   storeSyncPassword,
   storeSyncPath,
+  verifyBackup,
 } from './useCrypto'
 import {
   exportImportSchema,
@@ -103,13 +105,14 @@ export const getSyncStatus = async (forceRefresh = false): Promise<SyncStatus> =
     return cachedStatus
   }
 
-  const [hasPath, hasPass] = await Promise.all([hasSyncPath(), hasSyncPassword()])
+  const hasPath = hasSyncPath()
+  const hasPass = hasSyncPassword()
   const metadata = getSyncMetadata()
 
   let syncPath: string | null = null
   if (hasPath) {
     try {
-      syncPath = await getSyncPath()
+      syncPath = getSyncPath()
     } catch (error) {
       console.warn('Failed to get sync path:', error)
     }
@@ -137,7 +140,7 @@ export const configureSyncPath = async (): Promise<string | null> => {
   })
 
   if (selectedPath) {
-    await storeSyncPath(selectedPath)
+    storeSyncPath(selectedPath)
     invalidateStatusCache()
     return selectedPath
   }
@@ -145,14 +148,14 @@ export const configureSyncPath = async (): Promise<string | null> => {
   return null
 }
 
-export const configureSyncPassword = async (password: string): Promise<void> => {
-  await storeSyncPassword(password)
+export const configureSyncPassword = (password: string): void => {
+  storeSyncPassword(password)
   invalidateStatusCache()
 }
 
 export const setAutoSync = (enabled: boolean): void => setSyncMetadata({ autoSync: enabled })
 
-const getBackupFilePath = async (): Promise<string> => join(await getSyncPath(), BACKUP_FILENAME)
+const getBackupFilePath = async (): Promise<string> => join(getSyncPath(), BACKUP_FILENAME)
 
 const getPlaintextSecret = async (token: Token): Promise<string> =>
   token.otp.encrypted ? decryptSecret(token.otp.secret) : token.otp.secret
@@ -169,8 +172,8 @@ export const syncToFile = async (): Promise<SyncResult> => {
       }
     }
 
-    const syncPath = await getSyncPath()
-    const password = await getSyncPassword()
+    const syncPath = getSyncPath()
+    const password = getSyncPassword()
     const filePath = await getBackupFilePath()
 
     const dirExists = await exists(syncPath)
@@ -199,11 +202,17 @@ export const syncToFile = async (): Promise<SyncResult> => {
     const encryptedData = await encryptWithPassword(JSON.stringify(backupData), password)
 
     const syncedAt = Date.now()
+    let hmac: string | undefined
+    try {
+      hmac = await signBackup(encryptedData)
+    } catch {}
+
     const syncBackup = {
       version: SYNC_VERSION,
       encrypted: true,
       syncedAt,
       data: encryptedData,
+      ...(hmac && { hmac }),
     }
 
     await writeTextFile(filePath, JSON.stringify(syncBackup, null, 2))
@@ -245,7 +254,7 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       }
     }
 
-    const password = await getSyncPassword()
+    const password = getSyncPassword()
     const filePath = await getBackupFilePath()
 
     const fileExists = await exists(filePath)
@@ -265,6 +274,23 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
         success: false,
         message: 'Invalid backup file format',
         errorCode: SyncErrorCode.InvalidFormat,
+      }
+    }
+
+    // Verify backup integrity if HMAC is present
+    const rawParsed = JSON.parse(content)
+    if (rawParsed.hmac) {
+      try {
+        const valid = await verifyBackup(parsed.data.data, rawParsed.hmac)
+        if (!valid) {
+          return {
+            success: false,
+            message: 'Backup integrity check failed — file may be corrupted or tampered',
+            errorCode: SyncErrorCode.InvalidFormat,
+          }
+        }
+      } catch {
+        // HMAC verification unavailable (different encryption key), skip
       }
     }
 
@@ -362,7 +388,7 @@ export const getBackupInfo = async (
     }
 
     try {
-      const password = await getSyncPassword()
+      const password = getSyncPassword()
       const decryptedJson = await decryptWithPassword(parsed.data.data, password)
       const decryptedData = JSON.parse(decryptedJson)
 
@@ -385,19 +411,9 @@ export const getBackupInfo = async (
   }
 }
 
-export const disableSync = async (): Promise<void> => {
-  try {
-    await deleteSyncPath()
-  } catch (error) {
-    console.warn('Failed to delete sync path:', error)
-  }
-
-  try {
-    await deleteSyncPassword()
-  } catch (error) {
-    console.warn('Failed to delete sync password:', error)
-  }
-
+export const disableSync = (): void => {
+  deleteSyncPath()
+  deleteSyncPassword()
   localStorage.removeItem(SYNC_METADATA_KEY)
   invalidateStatusCache()
 }
@@ -470,7 +486,7 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
       }
     }
 
-    await storeSyncPassword(password)
+    storeSyncPassword(password)
 
     const reEncryptedTokens = await Promise.all(
       validationResult.data.tokens.map(async (token: Token) => ({

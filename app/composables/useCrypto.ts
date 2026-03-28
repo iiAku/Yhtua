@@ -1,22 +1,63 @@
 import { invoke } from '@tauri-apps/api/core'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import { createStore } from 'zustand/vanilla'
+
+// --- Persisted crypto store (localStorage) ---
+
+type CryptoStore = {
+  encryptionKey: string | null
+  syncPassword: string | null
+  syncPath: string | null
+}
+
+type CryptoStoreActions = {
+  setEncryptionKey: (key: string) => void
+  clearEncryptionKey: () => void
+  setSyncPassword: (password: string) => void
+  clearSyncPassword: () => void
+  setSyncPath: (path: string) => void
+  clearSyncPath: () => void
+  clearAll: () => void
+}
+
+const cryptoStore = createStore(
+  persist<CryptoStore & CryptoStoreActions>(
+    (set) => ({
+      encryptionKey: null,
+      syncPassword: null,
+      syncPath: null,
+      setEncryptionKey: (key: string) => set({ encryptionKey: key }),
+      clearEncryptionKey: () => set({ encryptionKey: null }),
+      setSyncPassword: (password: string) => set({ syncPassword: password }),
+      clearSyncPassword: () => set({ syncPassword: null }),
+      setSyncPath: (path: string) => set({ syncPath: path }),
+      clearSyncPath: () => set({ syncPath: null }),
+      clearAll: () => set({ encryptionKey: null, syncPassword: null, syncPath: null }),
+    }),
+    {
+      name: 'yhtua-key',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        encryptionKey: state.encryptionKey,
+        syncPassword: state.syncPassword,
+        syncPath: state.syncPath,
+      }),
+    },
+  ),
+)
+
+const getLocalKey = (): string | null => cryptoStore.getState().encryptionKey
+
+const requireLocalKey = (): string => {
+  const key = getLocalKey()
+  if (!key) throw new Error('No encryption key found — please restart the app')
+  return key
+}
+
+// --- Tauri command wrappers ---
 
 export const generateEncryptionKey = (): Promise<string> =>
   invoke<string>('generate_encryption_key')
-
-export const hasEncryptionKey = (): Promise<boolean> => invoke<boolean>('has_encryption_key')
-
-export const storeEncryptionKey = (keyBase64: string): Promise<void> =>
-  invoke<void>('store_encryption_key', { keyBase64 })
-
-export const getEncryptionKey = (): Promise<string> => invoke<string>('get_encryption_key')
-
-export const deleteEncryptionKey = (): Promise<void> => invoke<void>('delete_encryption_key')
-
-export const encryptWithKeychainKey = (plaintext: string): Promise<string> =>
-  invoke<string>('encrypt_with_keychain_key', { plaintext })
-
-export const decryptWithKeychainKey = (ciphertextBase64: string): Promise<string> =>
-  invoke<string>('decrypt_with_keychain_key', { ciphertextBase64 })
 
 export const encryptWithPassword = (plaintext: string, password: string): Promise<string> =>
   invoke<string>('encrypt_with_password', { plaintext, password })
@@ -24,42 +65,62 @@ export const encryptWithPassword = (plaintext: string, password: string): Promis
 export const decryptWithPassword = (ciphertextBase64: string, password: string): Promise<string> =>
   invoke<string>('decrypt_with_password', { ciphertextBase64, password })
 
-export const storeSyncPassword = (password: string): Promise<void> =>
-  invoke<void>('store_sync_password', { password })
+// --- Sync credentials (localStorage-backed, no keyring) ---
 
-export const getSyncPassword = (): Promise<string> => invoke<string>('get_sync_password')
+export const storeSyncPassword = (password: string): void =>
+  cryptoStore.getState().setSyncPassword(password)
 
-export const hasSyncPassword = (): Promise<boolean> => invoke<boolean>('has_sync_password')
-
-export const deleteSyncPassword = (): Promise<void> => invoke<void>('delete_sync_password')
-
-export const storeSyncPath = (path: string): Promise<void> =>
-  invoke<void>('store_sync_path', { path })
-
-export const getSyncPath = (): Promise<string> => invoke<string>('get_sync_path')
-
-export const hasSyncPath = (): Promise<boolean> => invoke<boolean>('has_sync_path')
-
-export const deleteSyncPath = (): Promise<void> => invoke<void>('delete_sync_path')
-
-export const initializeEncryption = async (): Promise<boolean> => {
-  const exists = await hasEncryptionKey()
-  if (!exists) {
-    const key = await generateEncryptionKey()
-    await storeEncryptionKey(key)
-    const verified = await hasEncryptionKey()
-    if (!verified) {
-      throw new Error('Failed to store encryption key in keychain')
-    }
-    return true
-  }
-  return false
+export const getSyncPassword = (): string => {
+  const password = cryptoStore.getState().syncPassword
+  if (!password) throw new Error('No sync password configured')
+  return password
 }
 
-export const isEncryptionReady = (): Promise<boolean> => hasEncryptionKey()
+export const hasSyncPassword = (): boolean => cryptoStore.getState().syncPassword !== null
+
+export const deleteSyncPassword = (): void => cryptoStore.getState().clearSyncPassword()
+
+export const storeSyncPath = (path: string): void => cryptoStore.getState().setSyncPath(path)
+
+export const getSyncPath = (): string => {
+  const path = cryptoStore.getState().syncPath
+  if (!path) throw new Error('No sync path configured')
+  return path
+}
+
+export const hasSyncPath = (): boolean => cryptoStore.getState().syncPath !== null
+
+export const deleteSyncPath = (): void => cryptoStore.getState().clearSyncPath()
+
+// --- Encryption key lifecycle (localStorage-backed) ---
+
+export const ensureEncryptionKey = async (): Promise<boolean> => {
+  if (getLocalKey()) return false
+  const key = await generateEncryptionKey()
+  cryptoStore.getState().setEncryptionKey(key)
+  return true
+}
+
+export const initializeEncryption = (): Promise<boolean> => ensureEncryptionKey()
+
+export const isEncryptionReady = (): boolean => getLocalKey() !== null
+
+export const hasEncryptionKey = (): boolean => getLocalKey() !== null
+
+export const deleteEncryptionKey = (): void => cryptoStore.getState().clearEncryptionKey()
+
+// --- Encrypt / decrypt using locally-stored key ---
 
 export const encryptSecret = (plaintext: string): Promise<string> =>
-  encryptWithKeychainKey(plaintext)
+  invoke<string>('encrypt_with_key', { plaintext, keyBase64: requireLocalKey() })
 
 export const decryptSecret = (ciphertext: string): Promise<string> =>
-  decryptWithKeychainKey(ciphertext)
+  invoke<string>('decrypt_with_key', { ciphertextBase64: ciphertext, keyBase64: requireLocalKey() })
+
+// --- Backup integrity (HMAC-SHA256) ---
+
+export const signBackup = (data: string): Promise<string> =>
+  invoke<string>('hmac_sha256', { data, keyBase64: requireLocalKey() })
+
+export const verifyBackup = (data: string, mac: string): Promise<boolean> =>
+  invoke<boolean>('verify_hmac_sha256', { data, keyBase64: requireLocalKey(), macBase64: mac })

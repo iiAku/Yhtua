@@ -1,12 +1,14 @@
 {
   "name": "Yhtua",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "private": true,
   "description": "Yhtua - Open Source 2FA Token Manager",
   "license": "MIT",
   "author": "Yoann Gendrey",
+  "workspaces": [
+    "landing"
+  ],
   "type": "module",
-  "workspaces": ["landing"],
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev",

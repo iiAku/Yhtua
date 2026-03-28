@@ -1,5 +1,5 @@
-import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'astro/config';
+import tailwindcss from '@tailwindcss/vite'
+import { defineConfig } from 'astro/config'
 
 export default defineConfig({
   vite: {
@@ -7,4 +7,4 @@ export default defineConfig({
   },
   site: 'https://iiaku.github.io',
   base: '/Yhtua',
-});
+})

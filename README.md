@@ -27,7 +27,7 @@
 ## Features
 
 - **TOTP tokens** — 6, 7, or 8-digit codes with real-time circular countdown
-- **AES-256-GCM encryption** — Secrets encrypted at rest, keys in your OS keychain
+- **AES-256-GCM encryption** — Secrets encrypted at rest, keys stored locally
 - **Cross-device sync** — Encrypted backups via any cloud folder (Dropbox, Drive, OneDrive)
 - **Auto-sync** — Background sync when tokens change, with password mismatch recovery
 - **Import & export** — Password-protected backup files, legacy format support
@@ -38,11 +38,11 @@
 
 Get the latest release for your platform from [Releases](https://github.com/iiAku/Yhtua/releases/latest).
 
-| Platform | Formats |
-|----------|---------|
-| Linux | `.deb` `.AppImage` `.rpm` |
-| macOS | `.dmg` |
-| Windows | `.msi` `.exe` |
+| Platform | Formats                   |
+| -------- | ------------------------- |
+| Linux    | `.deb` `.AppImage` `.rpm` |
+| macOS    | `.dmg`                    |
+| Windows  | `.msi` `.exe`             |
 
 ## Security
 
@@ -53,15 +53,18 @@ Local storage                          Export / Sync
 ─────────────                          ─────────────
 Tokens → AES-256-GCM → localStorage   Backup → PBKDF2 (600k) + AES-256-GCM → file
               │                                        │
-        OS Keychain                              User password
-  (macOS / Windows / Linux)
+        App local storage                        User password
+        (OS user-scoped)
 ```
 
-- **Encryption key** stored in OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service) with encrypted file fallback
+- **Encryption key** stored in app local storage (OS user-scoped directory)
 - **Sync backups** protected with PBKDF2-SHA256 at 600,000 iterations + AES-256-GCM
+- **Backup integrity** — HMAC-SHA256 signature on sync backups, verified on restore
 - **Zero network calls** — sync works via local filesystem only
 - **Minimum 8-character passwords** enforced for sync and export
-- **Secret cache TTL** — decrypted secrets expire from memory after 5 minutes
+- **Secret cache TTL** — decrypted secrets expire from memory after 30 seconds, cleared on app blur
+- **Clipboard auto-clear** — copied codes cleared after 500ms, also cleared when app loses focus
+- **Duplicate detection** — prevents adding tokens with the same label
 
 ## Development
 
@@ -72,13 +75,13 @@ Tokens → AES-256-GCM → localStorage   Backup → PBKDF2 (600k) + AES-256-GCM
 
 ### Tech stack
 
-| Layer | Tech |
-|-------|------|
+| Layer    | Tech                          |
+| -------- | ----------------------------- |
 | Frontend | Nuxt 4, Vue 3, Tailwind CSS 4 |
-| Backend | Tauri 2, Rust |
-| Crypto | ring (AES-256-GCM, PBKDF2) |
-| Keychain | keyring-rs |
-| Landing | Astro, Tailwind CSS 4 |
+| Backend  | Tauri 2, Rust                 |
+| Crypto   | ring (AES-256-GCM, PBKDF2)    |
+| Keychain | keyring-rs                    |
+| Landing  | Astro, Tailwind CSS 4         |
 
 ### Commands
 

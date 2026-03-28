@@ -45,8 +45,9 @@
           <p class="text-vault-danger text-sm font-medium text-center">{{ error }}</p>
           <template v-if="isKeyLost">
             <p class="text-vault-text-secondary text-xs text-center max-w-xs leading-relaxed">
-              Your encryption key was lost. If you have a sync backup, you can restore from it after
-              resetting. Otherwise, tokens must be re-added manually.
+              Your encryption key is missing. This can happen if app data was cleared. If you have a
+              sync backup, restore from it. Otherwise, you'll need to re-add tokens from your
+              services. Resetting will remove all current (unreadable) tokens.
             </p>
             <div class="flex gap-2">
               <button
@@ -218,7 +219,7 @@
 </template>
 
 <script setup lang="ts">
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
+import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager'
 
 const route = useRoute()
 
@@ -245,9 +246,8 @@ let intervalId: NodeJS.Timeout
 const padNumber = (number: number) => number.toString().padStart(2, '0')
 
 const formatCode = (code: string) => {
-  if (code.length === 6) return `${code.slice(0, 3)} ${code.slice(3)}`
-  if (code.length === 8) return `${code.slice(0, 4)} ${code.slice(4)}`
-  return code
+  const mid = Math.ceil(code.length / 2)
+  return `${code.slice(0, mid)} ${code.slice(mid)}`
 }
 
 const updateToken = async (token: Token) => {
@@ -278,12 +278,21 @@ const resetEncryption = async () => {
   navigateTo('/')
 }
 
+const clearClipboard = async () => {
+  try {
+    const current = await readText()
+    if (current === renderedToken.value) await writeText('')
+  } catch {}
+}
+
 const copy = async () => {
   try {
     await writeText(renderedToken.value)
     copied.value = true
     copyError.value = false
-    await useSleep(2000)
+    await useSleep(500)
+    await clearClipboard()
+    await useSleep(1500)
     copied.value = false
   } catch (error) {
     console.error('Failed to copy:', error)
@@ -293,7 +302,13 @@ const copy = async () => {
   }
 }
 
+const onVisibilityChange = () => {
+  if (document.hidden) clearClipboard()
+}
+
 onMounted(async () => {
+  document.addEventListener('visibilitychange', onVisibilityChange)
+
   if (token.value) {
     updateTokenLastUsed(token.value.id)
     await updateToken(token.value)
@@ -309,5 +324,8 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(() => clearInterval(intervalId))
+onBeforeUnmount(() => {
+  clearInterval(intervalId)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+})
 </script>

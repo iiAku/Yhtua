@@ -141,15 +141,18 @@ const showBackupPrompt = ref(false)
 const createNewToken = () => navigateTo('/token/create')
 const openSettings = () => navigateTo('/settings')
 
-const BACKUP_PROMPT_DISMISSED_KEY = 'yhtua_backup_prompt_dismissed'
+const BACKUP_PROMPT_DISMISSED_KEY = 'yhtua_backup_prompt_dismissed_at'
+const BACKUP_REPROMPT_DAYS = 7
 
 const dismissBackupPrompt = () => {
   showBackupPrompt.value = false
-  localStorage.setItem(BACKUP_PROMPT_DISMISSED_KEY, '1')
+  localStorage.setItem(BACKUP_PROMPT_DISMISSED_KEY, String(Date.now()))
 }
 
 onMounted(async () => {
-  if (localStorage.getItem(BACKUP_PROMPT_DISMISSED_KEY)) return
+  const dismissedAt = Number(localStorage.getItem(BACKUP_PROMPT_DISMISSED_KEY) || '0')
+  const daysSinceDismissed = (Date.now() - dismissedAt) / (1000 * 60 * 60 * 24)
+  if (dismissedAt && daysSinceDismissed < BACKUP_REPROMPT_DAYS) return
   const status = await getSyncStatus()
   showBackupPrompt.value = !status.enabled && getTokens().length > 0
 })

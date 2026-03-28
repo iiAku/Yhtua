@@ -98,7 +98,16 @@ const addToken = async ({
     })
   }
 
+  const duplicate = isDuplicateLabel(validParams.data.label)
+  if (duplicate) {
+    return useShowNotification(notification, {
+      text: `A token named "${duplicate.otp.label}" already exists`,
+      type: NotificationType.Danger,
+    })
+  }
+
   try {
+    await initializeEncryption()
     const token: Token = await createNewToken(
       validParams.data.secret,
       validParams.data.label,
@@ -106,11 +115,13 @@ const addToken = async ({
     )
 
     storeAddToken(token)
+    localStorage.setItem('yhtua_onboarding_done', '1')
 
     navigateTo(`/tokens/${token.id}`)
   } catch (error) {
+    console.error('Token creation failed:', error)
     return useShowNotification(notification, {
-      text: 'Failed to create token',
+      text: `Failed to create token: ${error instanceof Error ? error.message : String(error)}`,
       type: NotificationType.Danger,
     })
   }

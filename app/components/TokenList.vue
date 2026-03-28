@@ -73,13 +73,25 @@ const props = defineProps<{
   searchQuery?: string
 }>()
 
+const debouncedQuery = ref(props.searchQuery ?? '')
+let debounceTimer: NodeJS.Timeout | undefined
+
+watch(
+  () => props.searchQuery,
+  (val) => {
+    clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(() => {
+      debouncedQuery.value = val ?? ''
+    }, 150)
+  },
+)
+
+onBeforeUnmount(() => clearTimeout(debounceTimer))
+
 const filteredTokens = computed(() => {
   const tokens = getTokens()
-  if (!props.searchQuery) {
-    return tokens
-  }
-  return tokens.filter((token) => {
-    return token.otp.label.toLowerCase().includes(props.searchQuery!.toLowerCase())
-  })
+  if (!debouncedQuery.value) return tokens
+  const query = debouncedQuery.value.toLowerCase()
+  return tokens.filter((token) => token.otp.label.toLowerCase().includes(query))
 })
 </script>

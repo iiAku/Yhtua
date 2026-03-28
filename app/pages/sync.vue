@@ -37,15 +37,16 @@
             </svg>
           </div>
           <div>
-            <h3 class="text-vault-text font-semibold text-sm">Password Changed</h3>
+            <h3 class="text-vault-text font-semibold text-sm">Password Mismatch</h3>
             <p class="text-vault-text-secondary text-xs">
-              Backup encrypted with a different password
+              Sync password was changed on another device
             </p>
           </div>
         </div>
 
         <p class="text-vault-text-secondary text-xs mb-3 leading-relaxed">
-          Enter the new password to sync, or keep your local tokens.
+          Your backup was re-encrypted with a different password (likely changed on another device).
+          Enter the new password to continue syncing, or keep your local tokens and disable sync.
         </p>
 
         <div class="space-y-2 mb-4">
@@ -82,8 +83,8 @@
     </div>
 
     <Navbar />
-    <div class="flex-1 overflow-y-auto px-4 py-4">
-      <div class="text-center mb-6">
+    <div class="flex-1 overflow-y-auto px-4 py-3">
+      <div class="text-center mb-4">
         <div
           class="w-14 h-14 rounded-2xl bg-vault-indigo-subtle border border-vault-indigo/10 flex items-center justify-center mx-auto mb-3"
         >
@@ -102,12 +103,12 @@
           </svg>
         </div>
         <h2 class="text-lg font-bold tracking-tight text-vault-text">Sync & Backup</h2>
-        <p class="mt-1 text-xs text-vault-text-secondary">
+        <p class="mt-0.5 text-xs text-vault-text-secondary">
           Sync encrypted tokens to a cloud folder
         </p>
       </div>
 
-      <div class="flex-col w-full space-y-2.5">
+      <div class="flex-col w-full space-y-2">
         <!-- Sync Folder -->
         <div class="bg-vault-elevated rounded-xl p-3.5 border border-vault-border">
           <h3 class="text-vault-text font-semibold text-sm mb-1">Sync Folder</h3>
@@ -131,10 +132,23 @@
           <h3 class="text-vault-text font-semibold text-sm mb-1">Sync Password</h3>
           <p class="text-vault-text-muted text-xs mb-2.5">Encrypts your backup for other devices</p>
           <div v-if="!showPasswordInput && syncStatus.hasPassword" class="flex items-center gap-2">
-            <span class="text-vault-success text-sm font-medium">Configured</span>
+            <span
+              class="inline-flex items-center gap-1.5 rounded-lg bg-vault-success/10 px-2.5 py-1 text-xs font-medium text-vault-success ring-1 ring-inset ring-vault-success/20"
+            >
+              <svg
+                class="h-3 w-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="2"
+                stroke="currentColor"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+              </svg>
+              Configured
+            </span>
             <button
               @click="showPasswordInput = true"
-              class="text-vault-accent text-sm hover:text-vault-accent-hover font-medium transition-colors"
+              class="rounded-lg bg-vault-elevated px-2.5 py-1 text-xs font-medium text-vault-text-secondary ring-1 ring-inset ring-vault-border hover:bg-vault-hover hover:text-vault-text transition-colors"
             >
               Change
             </button>
@@ -169,13 +183,27 @@
             >
               Passwords do not match
             </p>
-            <button
-              @click="savePassword"
-              :disabled="!password || password.length < 8 || password !== passwordConfirm"
-              class="w-full rounded-xl bg-vault-accent px-3.5 py-2 text-sm font-semibold text-vault-base hover:bg-vault-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              Save Password
-            </button>
+            <div class="flex gap-2">
+              <button
+                v-if="syncStatus.hasPassword"
+                @click="
+                  showPasswordInput = false
+                  password = ''
+                  passwordConfirm = ''
+                "
+                class="flex-1 rounded-xl bg-vault-elevated px-3.5 py-2 text-sm font-medium text-vault-text-secondary ring-1 ring-inset ring-vault-border hover:bg-vault-hover transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                @click="savePassword"
+                :disabled="!password || password.length < 8 || password !== passwordConfirm"
+                :class="syncStatus.hasPassword ? 'flex-1' : 'w-full'"
+                class="rounded-xl bg-vault-accent px-3.5 py-2 text-sm font-semibold text-vault-base hover:bg-vault-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Save Password
+              </button>
+            </div>
           </div>
         </div>
 
@@ -423,7 +451,7 @@ const selectSyncFolder = async () => {
 
 const savePassword = async () => {
   if (password.value && password.value === passwordConfirm.value) {
-    await configureSyncPassword(password.value)
+    configureSyncPassword(password.value)
     password.value = ''
     passwordConfirm.value = ''
     showPasswordInput.value = false
@@ -543,7 +571,7 @@ const closeModal = async (_type: string, response: boolean) => {
     }
   } else if (modalAction.value === 'disable') {
     stopFileWatcher()
-    await disableSync()
+    disableSync()
     await refreshStatus()
     await useShowNotification(notification, {
       text: 'Sync disabled',

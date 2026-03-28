@@ -18,8 +18,11 @@ pub fn run() {
       crypto::store_encryption_key,
       crypto::get_encryption_key,
       crypto::delete_encryption_key,
+      crypto::ensure_encryption_key,
       crypto::encrypt_with_keychain_key,
       crypto::decrypt_with_keychain_key,
+      crypto::encrypt_with_key,
+      crypto::decrypt_with_key,
       crypto::encrypt_with_password,
       crypto::decrypt_with_password,
       crypto::store_sync_password,
@@ -30,6 +33,8 @@ pub fn run() {
       crypto::get_sync_path,
       crypto::has_sync_path,
       crypto::delete_sync_path,
+      crypto::hmac_sha256,
+      crypto::verify_hmac_sha256,
     ])
     .plugin(
       tauri_plugin_log::Builder::default()

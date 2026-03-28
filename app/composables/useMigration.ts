@@ -21,7 +21,7 @@ export const migrateToEncryptedStore = async (): Promise<MigrationResult> => {
 
     await initializeEncryption()
 
-    const ready = await isEncryptionReady()
+    const ready = isEncryptionReady()
     if (!ready) {
       return {
         migrated: false,

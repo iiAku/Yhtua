@@ -82,10 +82,16 @@ fn get_fallback_encryption_key() -> [u8; KEY_LEN] {
 fn read_fallback_credentials() -> FallbackCredentials {
     let path = match get_credentials_file_path() {
         Ok(p) => p,
-        Err(_) => return FallbackCredentials::default(),
+        Err(e) => {
+            log::error!("Failed to resolve credentials file path: {}", e);
+            return FallbackCredentials::default();
+        }
     };
 
+    log::debug!("Reading fallback credentials from: {:?}", path);
+
     if !path.exists() {
+        log::debug!("Fallback credentials file does not exist yet");
         return FallbackCredentials::default();
     }
 
@@ -93,11 +99,23 @@ fn read_fallback_credentials() -> FallbackCredentials {
         Ok(encrypted_content) => {
             let key = get_fallback_encryption_key();
             match decrypt_aes256gcm(&encrypted_content, &key) {
-                Ok(decrypted) => serde_json::from_str(&decrypted).unwrap_or_default(),
-                Err(_) => FallbackCredentials::default(),
+                Ok(decrypted) => match serde_json::from_str(&decrypted) {
+                    Ok(creds) => creds,
+                    Err(e) => {
+                        log::error!("Failed to parse fallback credentials JSON: {}", e);
+                        FallbackCredentials::default()
+                    }
+                },
+                Err(e) => {
+                    log::error!("Failed to decrypt fallback credentials: {}", e);
+                    FallbackCredentials::default()
+                }
             }
         }
-        Err(_) => FallbackCredentials::default(),
+        Err(e) => {
+            log::error!("Failed to read fallback credentials file: {}", e);
+            FallbackCredentials::default()
+        }
     }
 }
 
@@ -165,6 +183,8 @@ fn get_credential(name: &str) -> Option<String> {
 }
 
 fn store_credential(name: &str, value: &str) -> Result<(), CryptoError> {
+    log::info!("Storing credential '{}'", name);
+
     // Always write to fallback first for redundancy
     let mut creds = read_fallback_credentials();
     match name {
@@ -173,7 +193,26 @@ fn store_credential(name: &str, value: &str) -> Result<(), CryptoError> {
         KEYCHAIN_SYNC_PATH => creds.sync_path = Some(value.to_string()),
         _ => {}
     }
-    write_fallback_credentials(&creds)?;
+
+    if let Err(e) = write_fallback_credentials(&creds) {
+        log::error!("Fallback credentials write FAILED for '{}': {}", name, e);
+        return Err(e);
+    }
+    log::info!("Fallback credentials written successfully for '{}'", name);
+
+    // Verify fallback is readable
+    let verify = read_fallback_credentials();
+    let verified = match name {
+        KEYCHAIN_KEY_NAME => verify.encryption_key.is_some(),
+        KEYCHAIN_SYNC_PASSWORD => verify.sync_password.is_some(),
+        KEYCHAIN_SYNC_PATH => verify.sync_path.is_some(),
+        _ => false,
+    };
+    if verified {
+        log::info!("Fallback credential '{}' verified readable", name);
+    } else {
+        log::error!("Fallback credential '{}' written but NOT readable — file round-trip broken", name);
+    }
 
     // Also try to store in keychain (best effort)
     let keyring_result = get_keyring_entry(name).and_then(|entry| {
@@ -245,6 +284,30 @@ pub fn delete_encryption_key() -> Result<(), CryptoError> {
 }
 
 #[tauri::command]
+pub fn ensure_encryption_key() -> Result<bool, CryptoError> {
+    if has_credential(KEYCHAIN_KEY_NAME) {
+        log::info!("Encryption key already exists");
+        return Ok(false);
+    }
+
+    log::info!("No encryption key found, generating new one");
+    let key = generate_encryption_key();
+    store_credential(KEYCHAIN_KEY_NAME, &key)?;
+
+    if has_credential(KEYCHAIN_KEY_NAME) {
+        log::info!("Encryption key generated and verified successfully");
+        Ok(true)
+    } else {
+        log::error!("Encryption key was stored but verification failed — storage round-trip broken");
+        Err(CryptoError::Storage(
+            "Encryption key storage round-trip failed: key was written but cannot be read back. \
+             Check file permissions on ~/.local/share/.yhtua/"
+                .into(),
+        ))
+    }
+}
+
+#[tauri::command]
 pub fn encrypt_with_keychain_key(plaintext: String) -> Result<String, CryptoError> {
     let key_base64 = get_encryption_key()?;
     let key_bytes = BASE64
@@ -261,6 +324,22 @@ pub fn decrypt_with_keychain_key(ciphertext_base64: String) -> Result<String, Cr
         .decode(&key_base64)
         .map_err(|_| CryptoError::InvalidFormat)?;
 
+    decrypt_aes256gcm(&ciphertext_base64, &key_bytes)
+}
+
+#[tauri::command]
+pub fn encrypt_with_key(plaintext: String, key_base64: String) -> Result<String, CryptoError> {
+    let key_bytes = BASE64
+        .decode(&key_base64)
+        .map_err(|_| CryptoError::InvalidFormat)?;
+    encrypt_aes256gcm(&plaintext, &key_bytes)
+}
+
+#[tauri::command]
+pub fn decrypt_with_key(ciphertext_base64: String, key_base64: String) -> Result<String, CryptoError> {
+    let key_bytes = BASE64
+        .decode(&key_base64)
+        .map_err(|_| CryptoError::InvalidFormat)?;
     decrypt_aes256gcm(&ciphertext_base64, &key_bytes)
 }
 
@@ -426,6 +505,30 @@ pub fn has_sync_path() -> bool {
 #[tauri::command]
 pub fn delete_sync_path() -> Result<(), CryptoError> {
     delete_credential(KEYCHAIN_SYNC_PATH)
+}
+
+#[tauri::command]
+pub fn hmac_sha256(data: String, key_base64: String) -> Result<String, CryptoError> {
+    use ring::hmac;
+    let key_bytes = BASE64
+        .decode(&key_base64)
+        .map_err(|_| CryptoError::InvalidFormat)?;
+    let key = hmac::Key::new(hmac::HMAC_SHA256, &key_bytes);
+    let tag = hmac::sign(&key, data.as_bytes());
+    Ok(BASE64.encode(tag.as_ref()))
+}
+
+#[tauri::command]
+pub fn verify_hmac_sha256(data: String, key_base64: String, mac_base64: String) -> Result<bool, CryptoError> {
+    use ring::hmac;
+    let key_bytes = BASE64
+        .decode(&key_base64)
+        .map_err(|_| CryptoError::InvalidFormat)?;
+    let mac_bytes = BASE64
+        .decode(&mac_base64)
+        .map_err(|_| CryptoError::InvalidFormat)?;
+    let key = hmac::Key::new(hmac::HMAC_SHA256, &key_bytes);
+    Ok(hmac::verify(&key, data.as_bytes(), &mac_bytes).is_ok())
 }
 
 #[cfg(test)]

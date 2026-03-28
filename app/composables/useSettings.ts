@@ -142,6 +142,15 @@ export const importTokensEncrypted = async (
           return false
         }
 
+        const tokenCount = validationResult.data.tokens.length
+        const existingCount = getTokens().length
+        if (
+          existingCount > 0 &&
+          !confirm(`Import ${tokenCount} tokens? You currently have ${existingCount} tokens.`)
+        ) {
+          return false
+        }
+
         await initializeEncryption()
 
         const reEncryptedTokens = await Promise.all(
@@ -179,6 +188,15 @@ export const importTokensEncrypted = async (
     const legacyResult = parseAndValidate(jsonContent, exportImportSchema)
 
     if (legacyResult.success) {
+      const tokenCount = legacyResult.data.tokens.length
+      const existingCount = getTokens().length
+      if (
+        existingCount > 0 &&
+        !confirm(`Import ${tokenCount} tokens? You currently have ${existingCount} tokens.`)
+      ) {
+        return false
+      }
+
       await initializeEncryption()
 
       const reEncryptedTokens = await Promise.all(
@@ -295,6 +313,15 @@ export const importTokens = async (
         delay: 1500,
         type: NotificationType.Danger,
       })
+      return
+    }
+
+    const tokenCount = result.data.tokens.length
+    const existingCount = getTokens().length
+    if (
+      existingCount > 0 &&
+      !confirm(`Import ${tokenCount} tokens? You currently have ${existingCount} tokens.`)
+    ) {
       return
     }
 
