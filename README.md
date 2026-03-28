@@ -31,7 +31,7 @@
 - **Cross-device sync** — Encrypted backups via any cloud folder (Dropbox, Drive, OneDrive)
 - **Auto-sync** — Background sync when tokens change, with password mismatch recovery
 - **Import & export** — Password-protected backup files, legacy format support
-- **Native & lightweight** — ~5MB, built with Tauri 2 and Rust
+- **Native & lightweight** — ~4MB installer, built with Tauri 2 and Rust
 - **Fully offline** — No accounts, no telemetry, no network calls
 
 ## Download
