@@ -173,6 +173,14 @@ export const syncToFile = async (): Promise<SyncResult> => {
       }
     }
 
+    if (getTokens().length === 0) {
+      return {
+        success: false,
+        message: 'No tokens to sync',
+        errorCode: SyncErrorCode.NotConfigured,
+      }
+    }
+
     await ensureEncryptionKey()
 
     const syncPath = getSyncPath()
