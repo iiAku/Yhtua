@@ -5686,7 +5686,7 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "yhtua"
-version = "2.6.0"
+version = "2.6.1"
 dependencies = [
  "base64 0.22.1",
  "dirs",
