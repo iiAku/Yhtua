@@ -149,13 +149,19 @@ const dismissBackupPrompt = () => {
   localStorage.setItem(BACKUP_PROMPT_DISMISSED_KEY, String(Date.now()))
 }
 
-onMounted(async () => {
+const refreshBackupPrompt = async () => {
   const dismissedAt = Number(localStorage.getItem(BACKUP_PROMPT_DISMISSED_KEY) || '0')
   const daysSinceDismissed = (Date.now() - dismissedAt) / (1000 * 60 * 60 * 24)
-  if (dismissedAt && daysSinceDismissed < BACKUP_REPROMPT_DAYS) return
-  const status = await getSyncStatus()
+  if (dismissedAt && daysSinceDismissed < BACKUP_REPROMPT_DAYS) {
+    showBackupPrompt.value = false
+    return
+  }
+  const status = await getSyncStatus(true)
   showBackupPrompt.value = !status.enabled && getTokens().length > 0
-})
+}
+
+onMounted(refreshBackupPrompt)
+onActivated(refreshBackupPrompt)
 </script>
 
 <style scoped>
