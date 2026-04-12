@@ -96,6 +96,7 @@ export const createNewToken = async (
   digits: number,
 ): Promise<Token> => ({
   id: randomId(),
+  updatedAt: Date.now(),
   otp: {
     issuer: 'issuer',
     label,
@@ -109,6 +110,7 @@ export const createNewToken = async (
 
 export const createNewTokenPlaintext = (secret: string, label: string, digits: number): Token => ({
   id: randomId(),
+  updatedAt: Date.now(),
   otp: {
     issuer: 'issuer',
     label,

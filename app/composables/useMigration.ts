@@ -89,7 +89,29 @@ export const migrateToEncryptedStore = async (): Promise<MigrationResult> => {
   }
 }
 
+const stampUpdatedAtIfNeeded = () => {
+  const tokens = store.getState().tokens
+  const needsStamp = tokens.some((token) => token.updatedAt === undefined)
+  if (!needsStamp) return
+
+  const now = Date.now()
+  store.setState({
+    tokens: tokens.map((token) =>
+      token.updatedAt !== undefined ? token : { ...token, updatedAt: now },
+    ),
+  })
+}
+
+const initTombstonesIfNeeded = () => {
+  if (!store.getState().tombstones) {
+    store.setState({ tombstones: [] })
+  }
+}
+
 export const runMigrationIfNeeded = async (): Promise<MigrationResult | null> => {
+  initTombstonesIfNeeded()
+  stampUpdatedAtIfNeeded()
+
   if (!needsMigration() && !hasPlaintextSecrets()) {
     return null
   }

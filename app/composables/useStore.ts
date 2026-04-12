@@ -16,6 +16,7 @@ export const CURRENT_STORE_VERSION = StoreVersion.V2_ENCRYPTED
 export const tokenSchema = z.object({
   id: z.string(),
   lastUsed: z.number().optional(),
+  updatedAt: z.number().optional(),
   otp: z.object({
     issuer: z.string(),
     label: z.string(),
@@ -27,22 +28,35 @@ export const tokenSchema = z.object({
   }),
 })
 
+export const tombstoneSchema = z.object({
+  id: z.string(),
+  deletedAt: z.number(),
+})
+
+export type Tombstone = z.infer<typeof tombstoneSchema>
+
 export const exportImportSchema = z.object({
   version: z.string(),
   encrypted: z.boolean().optional().default(false),
   tokens: z.array(tokenSchema),
+  tombstones: z.array(tombstoneSchema).optional().default([]),
 })
 
 export const storeSchema = z.object({
   version: z.number().default(StoreVersion.V1_PLAINTEXT),
   tokens: z.array(tokenSchema),
+  tombstones: z.array(tombstoneSchema).optional().default([]),
 })
 
 export type Store = z.infer<typeof storeSchema>
 
 export type Token = z.infer<typeof tokenSchema>
 
-export const defaultStore = (): Store => ({ version: CURRENT_STORE_VERSION, tokens: [] })
+export const defaultStore = (): Store => ({
+  version: CURRENT_STORE_VERSION,
+  tokens: [],
+  tombstones: [],
+})
 
 export const store = createStore(
   persist<Store>(() => defaultStore(), {
@@ -118,7 +132,9 @@ export const isStoreEncrypted = (): boolean => getStoreVersion() >= StoreVersion
 export const updateToken = (tokenId: string, updates: Partial<Token>) => {
   const tokens = store
     .getState()
-    .tokens.map((token) => (token.id === tokenId ? { ...token, ...updates } : token))
+    .tokens.map((token) =>
+      token.id === tokenId ? { ...token, ...updates, updatedAt: Date.now() } : token,
+    )
   store.setState({ tokens })
 }
 
@@ -126,10 +142,26 @@ export const updateTokenOtp = (tokenId: string, otpUpdates: Partial<Token['otp']
   const tokens = store
     .getState()
     .tokens.map((token) =>
-      token.id === tokenId ? { ...token, otp: { ...token.otp, ...otpUpdates } } : token,
+      token.id === tokenId
+        ? { ...token, otp: { ...token.otp, ...otpUpdates }, updatedAt: Date.now() }
+        : token,
     )
   store.setState({ tokens })
 }
 
 export const replaceAllTokens = (tokens: Token[]) =>
   store.setState({ tokens, version: CURRENT_STORE_VERSION })
+
+export const TOMBSTONE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+
+export const getTombstones = (): Tombstone[] => store.getState().tombstones ?? []
+
+export const addTombstone = (id: string) =>
+  store.setState({ tombstones: [...getTombstones(), { id, deletedAt: Date.now() }] })
+
+export const setTombstones = (tombstones: Tombstone[]) => store.setState({ tombstones })
+
+export const pruneTombstones = (maxAgeMs: number = TOMBSTONE_MAX_AGE_MS) => {
+  const cutoff = Date.now() - maxAgeMs
+  store.setState({ tombstones: getTombstones().filter((t) => t.deletedAt > cutoff) })
+}

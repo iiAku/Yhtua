@@ -6,8 +6,9 @@
 
 <script setup lang="ts">
 import { runMigrationIfNeeded } from '~/composables/useMigration'
-import { store } from '~/composables/useStore'
+import { pruneTombstones, store } from '~/composables/useStore'
 import {
+  getIsMerging,
   getSyncStatus,
   initFileWatcher,
   stopFileWatcher,
@@ -32,11 +33,15 @@ onMounted(async () => {
     migrating.value = false
   }
 
+  pruneTombstones()
+
   await initFileWatcher()
 
   let previousTokens = JSON.stringify(store.getState().tokens)
 
   unsubscribeStore = store.subscribe(async (state) => {
+    if (getIsMerging()) return
+
     const currentTokens = JSON.stringify(state.tokens)
     if (currentTokens !== previousTokens) {
       previousTokens = currentTokens

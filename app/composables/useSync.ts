@@ -19,22 +19,29 @@ import {
   storeSyncPath,
   verifyBackup,
 } from './useCrypto'
+import { mergeTokens } from './useMerge'
 import {
   exportImportSchema,
+  getTombstones,
   getTokens,
   replaceAllTokens,
+  setTombstones,
   storeAddToken,
   type Token,
+  type Tombstone,
 } from './useStore'
 
 const BACKUP_FILENAME = 'yhtua_backup.json'
 const SYNC_DEBOUNCE_MS = 3000
 const FILE_WATCH_INTERVAL_MS = 10000
-const SYNC_VERSION = '2.1.0'
+const SYNC_VERSION = '2.2.0'
 const STATUS_CACHE_TTL_MS = 5000
 
 let cachedStatus: SyncStatus | null = null
 let statusCacheTime = 0
+let isMerging = false
+
+export const getIsMerging = () => isMerging
 
 const invalidateStatusCache = () => {
   cachedStatus = null
@@ -161,6 +168,37 @@ const getBackupFilePath = async (): Promise<string> => join(getSyncPath(), BACKU
 const getPlaintextSecret = async (token: Token): Promise<string> =>
   token.otp.encrypted ? decryptSecret(token.otp.secret) : token.otp.secret
 
+type RemoteBackup = {
+  tokens: Token[]
+  tombstones: Tombstone[]
+  syncedAt: number
+}
+
+const readRemoteBackup = async (password: string): Promise<RemoteBackup | null> => {
+  try {
+    const filePath = await getBackupFilePath()
+    const fileExists = await exists(filePath)
+    if (!fileExists) return null
+
+    const content = await readTextFile(filePath)
+    const parsed = syncBackupSchema.safeParse(JSON.parse(content))
+    if (!parsed.success) return null
+
+    const decryptedJson = await decryptWithPassword(parsed.data.data, password)
+    const decryptedData = JSON.parse(decryptedJson)
+    const validationResult = exportImportSchema.safeParse(decryptedData)
+    if (!validationResult.success) return null
+
+    return {
+      tokens: validationResult.data.tokens,
+      tombstones: validationResult.data.tombstones,
+      syncedAt: parsed.data.syncedAt,
+    }
+  } catch {
+    return null
+  }
+}
+
 export const syncToFile = async (): Promise<SyncResult> => {
   try {
     const status = await getSyncStatus()
@@ -192,9 +230,12 @@ export const syncToFile = async (): Promise<SyncResult> => {
       await mkdir(syncPath, { recursive: true })
     }
 
-    const tokens = getTokens()
-    const decryptedTokens = await Promise.all(
-      tokens.map(async (token) => ({
+    // Read remote backup for merge (null if missing or undecryptable)
+    const remote = await readRemoteBackup(password)
+
+    const localTokens = getTokens()
+    const decryptedLocalTokens = await Promise.all(
+      localTokens.map(async (token) => ({
         ...token,
         otp: {
           ...token.otp,
@@ -204,10 +245,18 @@ export const syncToFile = async (): Promise<SyncResult> => {
       })),
     )
 
+    const merged = mergeTokens({
+      localTokens: decryptedLocalTokens,
+      localTombstones: getTombstones(),
+      remoteTokens: remote?.tokens ?? [],
+      remoteTombstones: remote?.tombstones ?? [],
+    })
+
     const backupData = {
       version: SYNC_VERSION,
       encrypted: false,
-      tokens: decryptedTokens,
+      tokens: merged.tokens,
+      tombstones: merged.tombstones,
     }
 
     const encryptedData = await encryptWithPassword(JSON.stringify(backupData), password)
@@ -228,14 +277,32 @@ export const syncToFile = async (): Promise<SyncResult> => {
 
     await writeTextFile(filePath, JSON.stringify(syncBackup, null, 2))
 
+    // Re-encrypt merged tokens for local storage and update store
+    const reEncryptedTokens = await Promise.all(
+      merged.tokens.map(async (token) => ({
+        ...token,
+        otp: {
+          ...token.otp,
+          secret: await encryptSecret(token.otp.secret),
+          encrypted: true,
+        },
+      })),
+    )
+
+    isMerging = true
+    replaceAllTokens(reEncryptedTokens)
+    setTombstones(merged.tombstones)
+    isMerging = false
+
     setSyncMetadata({ lastSync: syncedAt, lastKnownFileVersion: syncedAt, passwordMismatch: false })
 
     return {
       success: true,
       message: 'Synced successfully',
-      tokensCount: tokens.length,
+      tokensCount: merged.tokens.length,
     }
   } catch (error) {
+    isMerging = false
     console.error('Sync to file failed:', error)
     return {
       success: false,
@@ -305,7 +372,7 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       }
     }
 
-    let decryptedData: { tokens: Token[] }
+    let decryptedData: { tokens: Token[]; tombstones?: Tombstone[] }
     try {
       const decryptedJson = await decryptWithPassword(parsed.data.data, password)
       decryptedData = JSON.parse(decryptedJson)
@@ -328,6 +395,53 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
 
     await ensureEncryptionKey()
 
+    if (replaceExisting) {
+      // Merge local + remote tokens
+      const localTokens = getTokens()
+      const decryptedLocalTokens = await Promise.all(
+        localTokens.map(async (token) => ({
+          ...token,
+          otp: {
+            ...token.otp,
+            secret: await getPlaintextSecret(token),
+            encrypted: false,
+          },
+        })),
+      )
+
+      const merged = mergeTokens({
+        localTokens: decryptedLocalTokens,
+        localTombstones: getTombstones(),
+        remoteTokens: validationResult.data.tokens,
+        remoteTombstones: validationResult.data.tombstones,
+      })
+
+      const reEncryptedTokens = await Promise.all(
+        merged.tokens.map(async (token: Token) => ({
+          ...token,
+          otp: {
+            ...token.otp,
+            secret: await encryptSecret(token.otp.secret),
+            encrypted: true,
+          },
+        })),
+      )
+
+      isMerging = true
+      replaceAllTokens(reEncryptedTokens)
+      setTombstones(merged.tombstones)
+      isMerging = false
+
+      setSyncMetadata({ lastKnownFileVersion: parsed.data.syncedAt })
+
+      return {
+        success: true,
+        message: 'Restored successfully',
+        tokensCount: reEncryptedTokens.length,
+      }
+    }
+
+    // Append mode (manual import) — no merge, just add
     const reEncryptedTokens = await Promise.all(
       validationResult.data.tokens.map(async (token: Token) => ({
         ...token,
@@ -339,12 +453,7 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       })),
     )
 
-    if (replaceExisting) {
-      replaceAllTokens(reEncryptedTokens)
-    } else {
-      storeAddToken(reEncryptedTokens)
-    }
-
+    storeAddToken(reEncryptedTokens)
     setSyncMetadata({ lastKnownFileVersion: parsed.data.syncedAt })
 
     return {
@@ -353,6 +462,7 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       tokensCount: reEncryptedTokens.length,
     }
   } catch (error) {
+    isMerging = false
     console.error('Restore from file failed:', error)
     return {
       success: false,
@@ -482,7 +592,7 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
       return { success: false, message: 'Invalid backup file format' }
     }
 
-    let decryptedData: { tokens: Token[] }
+    let decryptedData: { tokens: Token[]; tombstones?: Tombstone[] }
     try {
       const decryptedJson = await decryptWithPassword(parsed.data.data, password)
       decryptedData = JSON.parse(decryptedJson)
@@ -502,8 +612,28 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
     storeSyncPassword(password)
     await ensureEncryptionKey()
 
+    // Merge local + remote tokens
+    const localTokens = getTokens()
+    const decryptedLocalTokens = await Promise.all(
+      localTokens.map(async (token) => ({
+        ...token,
+        otp: {
+          ...token.otp,
+          secret: await getPlaintextSecret(token),
+          encrypted: false,
+        },
+      })),
+    )
+
+    const merged = mergeTokens({
+      localTokens: decryptedLocalTokens,
+      localTombstones: getTombstones(),
+      remoteTokens: validationResult.data.tokens,
+      remoteTombstones: validationResult.data.tombstones,
+    })
+
     const reEncryptedTokens = await Promise.all(
-      validationResult.data.tokens.map(async (token: Token) => ({
+      merged.tokens.map(async (token: Token) => ({
         ...token,
         otp: {
           ...token.otp,
@@ -513,7 +643,11 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
       })),
     )
 
+    isMerging = true
     replaceAllTokens(reEncryptedTokens)
+    setTombstones(merged.tombstones)
+    isMerging = false
+
     setSyncMetadata({ lastKnownFileVersion: parsed.data.syncedAt, passwordMismatch: false })
 
     return {
@@ -522,6 +656,7 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
       tokensCount: reEncryptedTokens.length,
     }
   } catch (error) {
+    isMerging = false
     return {
       success: false,
       message: error instanceof Error ? error.message : 'Restore failed',

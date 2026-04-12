@@ -191,6 +191,7 @@ const saveToken = async (tokenToSave: Token) => {
 }
 
 const deleteToken = async (token: Token) => {
+  addTombstone(token.id)
   store.setState({
     tokens: store.getState().tokens.filter((t: Token) => t.id !== token.id),
   })
