@@ -10,9 +10,14 @@
 </p>
 
 <p align="center">
+  <a href="https://iiaku.github.io/Yhtua/"><img src="https://img.shields.io/badge/website-iiaku.github.io%2FYhtua-d4a54a?style=flat-square" alt="Website"></a>
   <a href="https://github.com/iiAku/Yhtua/releases/latest"><img src="https://img.shields.io/github/v/release/iiAku/Yhtua?style=flat-square&color=d4a54a" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg?style=flat-square" alt="Platform">
+</p>
+
+<p align="center">
+  <strong><a href="https://iiaku.github.io/Yhtua/">iiaku.github.io/Yhtua</a></strong>
 </p>
 
 <p align="center">
