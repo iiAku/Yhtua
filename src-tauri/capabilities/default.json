@@ -24,6 +24,14 @@
       "identifier": "fs:allow-mkdir",
       "allow": [{ "path": "**" }]
     },
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [{ "path": "**" }]
+    },
     "clipboard-manager:allow-write-text"
   ]
 }

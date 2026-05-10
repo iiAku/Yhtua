@@ -1,6 +1,6 @@
 import { join } from '@tauri-apps/api/path'
 import { open } from '@tauri-apps/plugin-dialog'
-import { exists, mkdir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import { exists, mkdir, readDir, readTextFile, remove, writeTextFile } from '@tauri-apps/plugin-fs'
 import { z } from 'zod'
 import {
   decryptSecret,
@@ -32,6 +32,9 @@ import {
 } from './useStore'
 
 const BACKUP_FILENAME = 'yhtua_backup.json'
+const BACKUP_SAFETY_PREFIX = 'yhtua_backup.'
+const BACKUP_SAFETY_SUFFIX = '.bak.json'
+const BACKUP_SAFETY_KEEP = 5
 const SYNC_DEBOUNCE_MS = 3000
 const FILE_WATCH_INTERVAL_MS = 10000
 const SYNC_VERSION = '2.2.0'
@@ -56,6 +59,8 @@ export enum SyncErrorCode {
   NoBackupFile = 'no_backup_file',
   InvalidFormat = 'invalid_format',
   WrongPassword = 'wrong_password',
+  IntegrityCheckFailed = 'integrity_check_failed',
+  RemoteUnreadable = 'remote_unreadable',
   Unknown = 'unknown',
 }
 
@@ -172,30 +177,142 @@ type RemoteBackup = {
   tokens: Token[]
   tombstones: Tombstone[]
   syncedAt: number
+  rawContent: string
 }
 
-const readRemoteBackup = async (password: string): Promise<RemoteBackup | null> => {
+type RemoteReadResult =
+  | { kind: 'missing' }
+  | { kind: 'unreadable'; reason: SyncErrorCode; message: string }
+  | { kind: 'ok'; backup: RemoteBackup }
+
+const readRemoteBackup = async (password: string): Promise<RemoteReadResult> => {
+  const filePath = await getBackupFilePath()
+  const fileExists = await exists(filePath)
+  if (!fileExists) return { kind: 'missing' }
+
+  let content: string
   try {
-    const filePath = await getBackupFilePath()
-    const fileExists = await exists(filePath)
-    if (!fileExists) return null
-
-    const content = await readTextFile(filePath)
-    const parsed = syncBackupSchema.safeParse(JSON.parse(content))
-    if (!parsed.success) return null
-
-    const decryptedJson = await decryptWithPassword(parsed.data.data, password)
-    const decryptedData = JSON.parse(decryptedJson)
-    const validationResult = exportImportSchema.safeParse(decryptedData)
-    if (!validationResult.success) return null
-
+    content = await readTextFile(filePath)
+  } catch (error) {
     return {
+      kind: 'unreadable',
+      reason: SyncErrorCode.Unknown,
+      message: error instanceof Error ? error.message : 'Failed to read backup file',
+    }
+  }
+
+  let raw: unknown
+  try {
+    raw = JSON.parse(content)
+  } catch {
+    return {
+      kind: 'unreadable',
+      reason: SyncErrorCode.InvalidFormat,
+      message: 'Backup file is not valid JSON',
+    }
+  }
+
+  const parsed = syncBackupSchema.safeParse(raw)
+  if (!parsed.success) {
+    return {
+      kind: 'unreadable',
+      reason: SyncErrorCode.InvalidFormat,
+      message: 'Backup file format is invalid',
+    }
+  }
+
+  const hmac = (raw as { hmac?: unknown }).hmac
+  if (typeof hmac === 'string' && hmac.length > 0) {
+    try {
+      const valid = await verifyBackup(parsed.data.data, hmac)
+      if (!valid) {
+        return {
+          kind: 'unreadable',
+          reason: SyncErrorCode.IntegrityCheckFailed,
+          message: 'Backup integrity check failed — file may be corrupted or tampered',
+        }
+      }
+    } catch {
+      // HMAC verification unavailable (e.g. no local encryption key yet) — skip,
+      // fall through to password decryption which will still detect tampering.
+    }
+  }
+
+  let decryptedJson: string
+  try {
+    decryptedJson = await decryptWithPassword(parsed.data.data, password)
+  } catch {
+    return {
+      kind: 'unreadable',
+      reason: SyncErrorCode.WrongPassword,
+      message: 'Wrong password or corrupted file',
+    }
+  }
+
+  let decryptedData: unknown
+  try {
+    decryptedData = JSON.parse(decryptedJson)
+  } catch {
+    return {
+      kind: 'unreadable',
+      reason: SyncErrorCode.InvalidFormat,
+      message: 'Decrypted backup is not valid JSON',
+    }
+  }
+
+  const validationResult = exportImportSchema.safeParse(decryptedData)
+  if (!validationResult.success) {
+    return {
+      kind: 'unreadable',
+      reason: SyncErrorCode.InvalidFormat,
+      message: 'Backup data structure is invalid',
+    }
+  }
+
+  return {
+    kind: 'ok',
+    backup: {
       tokens: validationResult.data.tokens,
       tombstones: validationResult.data.tombstones,
       syncedAt: parsed.data.syncedAt,
+      rawContent: content,
+    },
+  }
+}
+
+const writeSafetyBackup = async (syncPath: string, content: string): Promise<void> => {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const safetyPath = await join(
+    syncPath,
+    `${BACKUP_SAFETY_PREFIX}${timestamp}${BACKUP_SAFETY_SUFFIX}`,
+  )
+  await writeTextFile(safetyPath, content)
+}
+
+const pruneSafetyBackups = async (syncPath: string): Promise<void> => {
+  try {
+    const entries = await readDir(syncPath)
+    const safetyFiles = entries
+      .filter(
+        (entry) =>
+          !entry.isDirectory &&
+          entry.name.startsWith(BACKUP_SAFETY_PREFIX) &&
+          entry.name.endsWith(BACKUP_SAFETY_SUFFIX),
+      )
+      .map((entry) => entry.name)
+      .sort()
+
+    const stale = safetyFiles.slice(0, Math.max(0, safetyFiles.length - BACKUP_SAFETY_KEEP))
+    for (const name of stale) {
+      try {
+        const path = await join(syncPath, name)
+        await remove(path)
+      } catch (error) {
+        console.warn(`Failed to prune safety backup ${name}:`, error)
+      }
     }
-  } catch {
-    return null
+  } catch (error) {
+    console.warn('Failed to enumerate safety backups for pruning:', error)
   }
 }
 
@@ -230,8 +347,16 @@ export const syncToFile = async (): Promise<SyncResult> => {
       await mkdir(syncPath, { recursive: true })
     }
 
-    // Read remote backup for merge (null if missing or undecryptable)
+    // Read remote backup for merge. Abort if cloud file exists but is unreadable —
+    // overwriting it would silently destroy whatever data is in it.
     const remote = await readRemoteBackup(password)
+    if (remote.kind === 'unreadable') {
+      return {
+        success: false,
+        message: `Refusing to overwrite remote backup: ${remote.message}`,
+        errorCode: remote.reason,
+      }
+    }
 
     const localTokens = getTokens()
     const decryptedLocalTokens = await Promise.all(
@@ -245,11 +370,14 @@ export const syncToFile = async (): Promise<SyncResult> => {
       })),
     )
 
+    const remoteTokens = remote.kind === 'ok' ? remote.backup.tokens : []
+    const remoteTombstones = remote.kind === 'ok' ? remote.backup.tombstones : []
+
     const merged = mergeTokens({
       localTokens: decryptedLocalTokens,
       localTombstones: getTombstones(),
-      remoteTokens: remote?.tokens ?? [],
-      remoteTombstones: remote?.tombstones ?? [],
+      remoteTokens,
+      remoteTombstones,
     })
 
     const backupData = {
@@ -273,6 +401,17 @@ export const syncToFile = async (): Promise<SyncResult> => {
       syncedAt,
       data: encryptedData,
       ...(hmac && { hmac }),
+    }
+
+    // Write a safety copy of the existing remote before overwriting, so a bad
+    // merge or schema bug never destroys the previous good state.
+    if (remote.kind === 'ok') {
+      try {
+        await writeSafetyBackup(syncPath, remote.backup.rawContent)
+        await pruneSafetyBackups(syncPath)
+      } catch (error) {
+        console.warn('Failed to write safety backup:', error)
+      }
     }
 
     await writeTextFile(filePath, JSON.stringify(syncBackup, null, 2))
@@ -333,64 +472,17 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
     }
 
     const password = getSyncPassword()
-    const filePath = await getBackupFilePath()
 
-    const fileExists = await exists(filePath)
-    if (!fileExists) {
+    const remote = await readRemoteBackup(password)
+    if (remote.kind === 'missing') {
       return {
         success: false,
         message: 'No backup file found',
         errorCode: SyncErrorCode.NoBackupFile,
       }
     }
-
-    const content = await readTextFile(filePath)
-    const parsed = syncBackupSchema.safeParse(JSON.parse(content))
-
-    if (!parsed.success) {
-      return {
-        success: false,
-        message: 'Invalid backup file format',
-        errorCode: SyncErrorCode.InvalidFormat,
-      }
-    }
-
-    // Verify backup integrity if HMAC is present
-    const rawParsed = JSON.parse(content)
-    if (rawParsed.hmac) {
-      try {
-        const valid = await verifyBackup(parsed.data.data, rawParsed.hmac)
-        if (!valid) {
-          return {
-            success: false,
-            message: 'Backup integrity check failed — file may be corrupted or tampered',
-            errorCode: SyncErrorCode.InvalidFormat,
-          }
-        }
-      } catch {
-        // HMAC verification unavailable (different encryption key), skip
-      }
-    }
-
-    let decryptedData: { tokens: Token[]; tombstones?: Tombstone[] }
-    try {
-      const decryptedJson = await decryptWithPassword(parsed.data.data, password)
-      decryptedData = JSON.parse(decryptedJson)
-    } catch {
-      return {
-        success: false,
-        message: 'Wrong password or corrupted file',
-        errorCode: SyncErrorCode.WrongPassword,
-      }
-    }
-
-    const validationResult = exportImportSchema.safeParse(decryptedData)
-    if (!validationResult.success) {
-      return {
-        success: false,
-        message: 'Invalid backup data structure',
-        errorCode: SyncErrorCode.InvalidFormat,
-      }
+    if (remote.kind === 'unreadable') {
+      return { success: false, message: remote.message, errorCode: remote.reason }
     }
 
     await ensureEncryptionKey()
@@ -412,8 +504,8 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       const merged = mergeTokens({
         localTokens: decryptedLocalTokens,
         localTombstones: getTombstones(),
-        remoteTokens: validationResult.data.tokens,
-        remoteTombstones: validationResult.data.tombstones,
+        remoteTokens: remote.backup.tokens,
+        remoteTombstones: remote.backup.tombstones,
       })
 
       const reEncryptedTokens = await Promise.all(
@@ -432,7 +524,7 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       setTombstones(merged.tombstones)
       isMerging = false
 
-      setSyncMetadata({ lastKnownFileVersion: parsed.data.syncedAt })
+      setSyncMetadata({ lastKnownFileVersion: remote.backup.syncedAt })
 
       return {
         success: true,
@@ -443,7 +535,7 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
 
     // Append mode (manual import) — no merge, just add
     const reEncryptedTokens = await Promise.all(
-      validationResult.data.tokens.map(async (token: Token) => ({
+      remote.backup.tokens.map(async (token: Token) => ({
         ...token,
         otp: {
           ...token.otp,
@@ -454,7 +546,7 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
     )
 
     storeAddToken(reEncryptedTokens)
-    setSyncMetadata({ lastKnownFileVersion: parsed.data.syncedAt })
+    setSyncMetadata({ lastKnownFileVersion: remote.backup.syncedAt })
 
     return {
       success: true,
@@ -579,34 +671,12 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
       return { success: false, message: 'Sync path not configured' }
     }
 
-    const filePath = await getBackupFilePath()
-    const fileExists = await exists(filePath)
-    if (!fileExists) {
+    const remote = await readRemoteBackup(password)
+    if (remote.kind === 'missing') {
       return { success: false, message: 'No backup file found' }
     }
-
-    const content = await readTextFile(filePath)
-    const parsed = syncBackupSchema.safeParse(JSON.parse(content))
-
-    if (!parsed.success) {
-      return { success: false, message: 'Invalid backup file format' }
-    }
-
-    let decryptedData: { tokens: Token[]; tombstones?: Tombstone[] }
-    try {
-      const decryptedJson = await decryptWithPassword(parsed.data.data, password)
-      decryptedData = JSON.parse(decryptedJson)
-    } catch {
-      return { success: false, message: 'Wrong password', errorCode: SyncErrorCode.WrongPassword }
-    }
-
-    const validationResult = exportImportSchema.safeParse(decryptedData)
-    if (!validationResult.success) {
-      return {
-        success: false,
-        message: 'Invalid backup data structure',
-        errorCode: SyncErrorCode.InvalidFormat,
-      }
+    if (remote.kind === 'unreadable') {
+      return { success: false, message: remote.message, errorCode: remote.reason }
     }
 
     storeSyncPassword(password)
@@ -628,8 +698,8 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
     const merged = mergeTokens({
       localTokens: decryptedLocalTokens,
       localTombstones: getTombstones(),
-      remoteTokens: validationResult.data.tokens,
-      remoteTombstones: validationResult.data.tombstones,
+      remoteTokens: remote.backup.tokens,
+      remoteTombstones: remote.backup.tombstones,
     })
 
     const reEncryptedTokens = await Promise.all(
@@ -648,7 +718,7 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
     setTombstones(merged.tombstones)
     isMerging = false
 
-    setSyncMetadata({ lastKnownFileVersion: parsed.data.syncedAt, passwordMismatch: false })
+    setSyncMetadata({ lastKnownFileVersion: remote.backup.syncedAt, passwordMismatch: false })
 
     return {
       success: true,
