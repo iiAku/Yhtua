@@ -453,7 +453,7 @@ const selectSyncFolder = async () => {
 
 const savePassword = async () => {
   if (password.value && password.value === passwordConfirm.value) {
-    configureSyncPassword(password.value)
+    await configureSyncPassword(password.value)
     password.value = ''
     passwordConfirm.value = ''
     showPasswordInput.value = false
@@ -573,7 +573,7 @@ const closeModal = async (_type: string, response: boolean) => {
     }
   } else if (modalAction.value === 'disable') {
     stopFileWatcher()
-    disableSync()
+    await disableSync()
     await refreshStatus()
     await useShowNotification(notification, {
       text: 'Sync disabled',

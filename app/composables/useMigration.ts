@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core'
 import { encryptSecret, initializeEncryption, isEncryptionReady } from './useCrypto'
 import { CURRENT_STORE_VERSION, getStoreVersion, StoreVersion, store, type Token } from './useStore'
 
@@ -21,7 +22,7 @@ export const migrateToEncryptedStore = async (): Promise<MigrationResult> => {
 
     await initializeEncryption()
 
-    const ready = isEncryptionReady()
+    const ready = await isEncryptionReady()
     if (!ready) {
       return {
         migrated: false,
@@ -108,7 +109,41 @@ const initTombstonesIfNeeded = () => {
   }
 }
 
+const LEGACY_CRYPTO_STORE_KEY = 'yhtua-key'
+
+const migrateCredentialsToKeychain = async (): Promise<void> => {
+  try {
+    const raw = localStorage.getItem(LEGACY_CRYPTO_STORE_KEY)
+    if (!raw) return
+
+    const parsed = JSON.parse(raw)
+    const state = parsed?.state
+    if (!state) return
+
+    const migrations: Promise<void>[] = []
+
+    if (typeof state.encryptionKey === 'string') {
+      migrations.push(invoke('store_encryption_key', { keyBase64: state.encryptionKey }))
+    }
+    if (typeof state.syncPassword === 'string') {
+      migrations.push(invoke('store_sync_password', { password: state.syncPassword }))
+    }
+    if (typeof state.syncPath === 'string') {
+      migrations.push(invoke('store_sync_path', { path: state.syncPath }))
+    }
+
+    if (migrations.length === 0) return
+
+    await Promise.all(migrations)
+    localStorage.removeItem(LEGACY_CRYPTO_STORE_KEY)
+    console.log('Migrated credentials from localStorage to keychain')
+  } catch (error) {
+    console.warn('Credential migration from localStorage failed (will retry next launch):', error)
+  }
+}
+
 export const runMigrationIfNeeded = async (): Promise<MigrationResult | null> => {
+  await migrateCredentialsToKeychain()
   initTombstonesIfNeeded()
   stampUpdatedAtIfNeeded()
 

@@ -1,6 +1,14 @@
 import { join } from '@tauri-apps/api/path'
 import { open } from '@tauri-apps/plugin-dialog'
-import { exists, mkdir, readDir, readTextFile, remove, writeTextFile } from '@tauri-apps/plugin-fs'
+import {
+  exists,
+  mkdir,
+  readDir,
+  readTextFile,
+  remove,
+  rename,
+  writeTextFile,
+} from '@tauri-apps/plugin-fs'
 import { z } from 'zod'
 import {
   decryptSecret,
@@ -14,10 +22,8 @@ import {
   getSyncPath,
   hasSyncPassword,
   hasSyncPath,
-  signBackup,
   storeSyncPassword,
   storeSyncPath,
-  verifyBackup,
 } from './useCrypto'
 import { mergeTokens } from './useMerge'
 import {
@@ -59,8 +65,6 @@ export enum SyncErrorCode {
   NoBackupFile = 'no_backup_file',
   InvalidFormat = 'invalid_format',
   WrongPassword = 'wrong_password',
-  IntegrityCheckFailed = 'integrity_check_failed',
-  RemoteUnreadable = 'remote_unreadable',
   Unknown = 'unknown',
 }
 
@@ -118,14 +122,14 @@ export const getSyncStatus = async (forceRefresh = false): Promise<SyncStatus> =
     return cachedStatus
   }
 
-  const hasPath = hasSyncPath()
-  const hasPass = hasSyncPassword()
+  const hasPath = await hasSyncPath()
+  const hasPass = await hasSyncPassword()
   const metadata = getSyncMetadata()
 
   let syncPath: string | null = null
   if (hasPath) {
     try {
-      syncPath = getSyncPath()
+      syncPath = await getSyncPath()
     } catch (error) {
       console.warn('Failed to get sync path:', error)
     }
@@ -153,7 +157,7 @@ export const configureSyncPath = async (): Promise<string | null> => {
   })
 
   if (selectedPath) {
-    storeSyncPath(selectedPath)
+    await storeSyncPath(selectedPath)
     invalidateStatusCache()
     return selectedPath
   }
@@ -161,14 +165,14 @@ export const configureSyncPath = async (): Promise<string | null> => {
   return null
 }
 
-export const configureSyncPassword = (password: string): void => {
-  storeSyncPassword(password)
+export const configureSyncPassword = async (password: string): Promise<void> => {
+  await storeSyncPassword(password)
   invalidateStatusCache()
 }
 
 export const setAutoSync = (enabled: boolean): void => setSyncMetadata({ autoSync: enabled })
 
-const getBackupFilePath = async (): Promise<string> => join(getSyncPath(), BACKUP_FILENAME)
+const getBackupFilePath = async (): Promise<string> => join(await getSyncPath(), BACKUP_FILENAME)
 
 const getPlaintextSecret = async (token: Token): Promise<string> =>
   token.otp.encrypted ? decryptSecret(token.otp.secret) : token.otp.secret
@@ -218,23 +222,6 @@ const readRemoteBackup = async (password: string): Promise<RemoteReadResult> => 
       kind: 'unreadable',
       reason: SyncErrorCode.InvalidFormat,
       message: 'Backup file format is invalid',
-    }
-  }
-
-  const hmac = (raw as { hmac?: unknown }).hmac
-  if (typeof hmac === 'string' && hmac.length > 0) {
-    try {
-      const valid = await verifyBackup(parsed.data.data, hmac)
-      if (!valid) {
-        return {
-          kind: 'unreadable',
-          reason: SyncErrorCode.IntegrityCheckFailed,
-          message: 'Backup integrity check failed — file may be corrupted or tampered',
-        }
-      }
-    } catch {
-      // HMAC verification unavailable (e.g. no local encryption key yet) — skip,
-      // fall through to password decryption which will still detect tampering.
     }
   }
 
@@ -338,8 +325,8 @@ export const syncToFile = async (): Promise<SyncResult> => {
 
     await ensureEncryptionKey()
 
-    const syncPath = getSyncPath()
-    const password = getSyncPassword()
+    const syncPath = await getSyncPath()
+    const password = await getSyncPassword()
     const filePath = await getBackupFilePath()
 
     const dirExists = await exists(syncPath)
@@ -390,17 +377,12 @@ export const syncToFile = async (): Promise<SyncResult> => {
     const encryptedData = await encryptWithPassword(JSON.stringify(backupData), password)
 
     const syncedAt = Date.now()
-    let hmac: string | undefined
-    try {
-      hmac = await signBackup(encryptedData)
-    } catch {}
 
     const syncBackup = {
       version: SYNC_VERSION,
       encrypted: true,
       syncedAt,
       data: encryptedData,
-      ...(hmac && { hmac }),
     }
 
     // Write a safety copy of the existing remote before overwriting, so a bad
@@ -414,7 +396,10 @@ export const syncToFile = async (): Promise<SyncResult> => {
       }
     }
 
-    await writeTextFile(filePath, JSON.stringify(syncBackup, null, 2))
+    // Atomic write: temp file then rename, so cloud clients never observe a partial file
+    const tmpPath = await join(syncPath, `${BACKUP_FILENAME}.tmp`)
+    await writeTextFile(tmpPath, JSON.stringify(syncBackup, null, 2))
+    await rename(tmpPath, filePath)
 
     // Re-encrypt merged tokens for local storage and update store
     const reEncryptedTokens = await Promise.all(
@@ -471,7 +456,7 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       }
     }
 
-    const password = getSyncPassword()
+    const password = await getSyncPassword()
 
     const remote = await readRemoteBackup(password)
     if (remote.kind === 'missing') {
@@ -603,7 +588,7 @@ export const getBackupInfo = async (
     }
 
     try {
-      const password = getSyncPassword()
+      const password = await getSyncPassword()
       const decryptedJson = await decryptWithPassword(parsed.data.data, password)
       const decryptedData = JSON.parse(decryptedJson)
 
@@ -626,9 +611,8 @@ export const getBackupInfo = async (
   }
 }
 
-export const disableSync = (): void => {
-  deleteSyncPath()
-  deleteSyncPassword()
+export const disableSync = async (): Promise<void> => {
+  await Promise.all([deleteSyncPath(), deleteSyncPassword()])
   localStorage.removeItem(SYNC_METADATA_KEY)
   invalidateStatusCache()
 }
@@ -679,7 +663,7 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
       return { success: false, message: remote.message, errorCode: remote.reason }
     }
 
-    storeSyncPassword(password)
+    await storeSyncPassword(password)
     await ensureEncryptionKey()
 
     // Merge local + remote tokens

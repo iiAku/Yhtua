@@ -33,8 +33,6 @@ pub fn run() {
       crypto::get_sync_path,
       crypto::has_sync_path,
       crypto::delete_sync_path,
-      crypto::hmac_sha256,
-      crypto::verify_hmac_sha256,
     ])
     .plugin(
       tauri_plugin_log::Builder::default()
