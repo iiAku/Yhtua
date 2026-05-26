@@ -612,7 +612,8 @@ export const getBackupInfo = async (
 }
 
 export const disableSync = async (): Promise<void> => {
-  await Promise.all([deleteSyncPath(), deleteSyncPassword()])
+  await deleteSyncPath()
+  await deleteSyncPassword()
   localStorage.removeItem(SYNC_METADATA_KEY)
   invalidateStatusCache()
 }

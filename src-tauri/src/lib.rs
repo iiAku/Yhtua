@@ -13,16 +13,11 @@ pub fn run() {
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_fs::init())
     .invoke_handler(tauri::generate_handler![
-      crypto::generate_encryption_key,
       crypto::has_encryption_key,
       crypto::store_encryption_key,
-      crypto::get_encryption_key,
-      crypto::delete_encryption_key,
       crypto::ensure_encryption_key,
       crypto::encrypt_with_keychain_key,
       crypto::decrypt_with_keychain_key,
-      crypto::encrypt_with_key,
-      crypto::decrypt_with_key,
       crypto::encrypt_with_password,
       crypto::decrypt_with_password,
       crypto::store_sync_password,

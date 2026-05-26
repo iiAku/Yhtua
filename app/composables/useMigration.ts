@@ -120,24 +120,28 @@ const migrateCredentialsToKeychain = async (): Promise<void> => {
     const state = parsed?.state
     if (!state) return
 
-    const migrations: Promise<void>[] = []
+    let migrated = false
 
+    // Sequential to avoid racing on the shared fallback credentials file
     if (typeof state.encryptionKey === 'string') {
-      migrations.push(invoke('store_encryption_key', { keyBase64: state.encryptionKey }))
+      await invoke('store_encryption_key', { keyBase64: state.encryptionKey })
+      migrated = true
     }
     if (typeof state.syncPassword === 'string') {
-      migrations.push(invoke('store_sync_password', { password: state.syncPassword }))
+      await invoke('store_sync_password', { password: state.syncPassword })
+      migrated = true
     }
     if (typeof state.syncPath === 'string') {
-      migrations.push(invoke('store_sync_path', { path: state.syncPath }))
+      await invoke('store_sync_path', { path: state.syncPath })
+      migrated = true
     }
 
-    if (migrations.length === 0) return
+    if (!migrated) return
 
-    await Promise.all(migrations)
     localStorage.removeItem(LEGACY_CRYPTO_STORE_KEY)
     console.log('Migrated credentials from localStorage to keychain')
   } catch (error) {
+    // Keep localStorage intact so migration retries on next launch
     console.warn('Credential migration from localStorage failed (will retry next launch):', error)
   }
 }

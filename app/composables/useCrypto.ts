@@ -37,8 +37,6 @@ export const isEncryptionReady = (): Promise<boolean> => invoke<boolean>('has_en
 
 export const hasEncryptionKey = (): Promise<boolean> => invoke<boolean>('has_encryption_key')
 
-export const deleteEncryptionKey = (): Promise<void> => invoke('delete_encryption_key')
-
 // --- Encrypt / decrypt using keychain-stored key ---
 
 export const encryptSecret = (plaintext: string): Promise<string> =>
