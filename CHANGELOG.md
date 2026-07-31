@@ -4,9 +4,13 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-07-31
+
 ### Build/Release
 
 - Updated Gitleaks Action to its Node 24-based v3 release and suppressed incompatible TypeScript major-update automation until the Vue type-checking stack supports it.
+- Restored the established application and website icon set exactly as shipped before version 2.8.0.
+- Restored the AppImage Wayland compatibility patch, removed the conflicting bundled `libwayland-client`, and added a packaged-app launch/render smoke test.
 
 ## [2.8.0] - 2026-07-31
 
@@ -17,7 +21,7 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Added authenticated format markers, OS CSPRNG nonces/salts, input limits, key validation, secret zeroization where Rust permits, and tamper/wrong-password tests.
 - Removed unrestricted Tauri filesystem capabilities and routed bounded backup operations through symlink-aware, atomic Rust commands.
 - Added a restrictive application CSP, ownership-aware clipboard clearing, and route-exit cleanup for decrypted secrets and passwords.
-- Replaced an icon set with incomplete provenance metadata with an original MIT-licensed vector and regenerated platform assets.
+- Replaced the established icon set during the unpublished release; this unintended branding change is reverted in the next release.
 
 ### Fixed
 
@@ -45,5 +49,6 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 - Added frozen installs, version consistency gates, RustSec/cargo-deny policy, SBOM/checksum preparation, and hardened automation.
 
-[Unreleased]: https://github.com/iiAku/Yhtua/compare/v2.8.0...HEAD
-[2.8.0]: https://github.com/iiAku/Yhtua/compare/v2.7.2...v2.8.0
+[Unreleased]: https://github.com/iiAku/Yhtua/compare/v2.8.1...HEAD
+[2.8.1]: https://github.com/iiAku/Yhtua/compare/549dfb95f7703d54678a9ca1cb1a96f5d8f08c41...v2.8.1
+[2.8.0]: https://github.com/iiAku/Yhtua/compare/v2.7.2...549dfb95f7703d54678a9ca1cb1a96f5d8f08c41

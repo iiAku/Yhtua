@@ -1,6 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Yhtua shield">
-  <rect width="1024" height="1024" rx="208" fill="#0a0b10"/>
-  <path d="M512 120 812 244v238c0 190-112 342-300 432-188-90-300-242-300-432V244z" fill="#d4af55"/>
-  <path d="M350 334 512 510 674 334M512 510v214" fill="none" stroke="#0a0b10" stroke-width="76" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="512" cy="758" r="38" fill="#0a0b10"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#g)"/>
+  <text x="16" y="22" text-anchor="middle" fill="white" font-family="system-ui" font-size="18" font-weight="700">Y</text>
 </svg>
