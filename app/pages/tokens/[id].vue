@@ -158,7 +158,7 @@
                     : 'text-vault-text'
               "
             >
-              {{ formatCode(renderedToken.value) }}
+              {{ documentHidden ? '••• •••' : formatCode(renderedToken.value) }}
             </p>
           </div>
 
@@ -227,6 +227,7 @@ const copied = ref(false)
 const copyError = ref(false)
 const loading = ref(true)
 const error = ref('')
+const documentHidden = ref(false)
 
 const token = ref<Token | undefined>(
   store.getState().tokens.find((token) => token.id === route.params.id),
@@ -241,7 +242,7 @@ const renderedToken = reactive({
   remainingTime: 0,
 })
 
-let intervalId: NodeJS.Timeout
+let intervalId: ReturnType<typeof setInterval> | undefined
 
 const padNumber = (number: number) => number.toString().padStart(2, '0')
 
@@ -273,27 +274,40 @@ const retry = async () => {
 }
 
 const resetEncryption = async () => {
-  store.setState(defaultStore())
-  await initializeEncryption()
-  navigateTo('/')
+  if (!confirm('Reset the encryption key and permanently remove all unreadable tokens?')) return
+  try {
+    await resetEncryptionKey()
+    storeDeleteAllTokens()
+    navigateTo('/')
+  } catch {
+    error.value = 'Unable to reset the encryption key'
+  }
 }
 
-const clearClipboard = async () => {
+let lastCopiedValue: string | null = null
+let copySequence = 0
+
+const clearClipboard = async (ownedValue: string | null = lastCopiedValue) => {
+  if (!ownedValue) return
   try {
-    const current = await readText()
-    if (current === renderedToken.value) await writeText('')
+    const cleared = await clearOwnedClipboard(ownedValue, readText, writeText)
+    if (cleared && lastCopiedValue === ownedValue) lastCopiedValue = null
   } catch {}
 }
 
 const copy = async () => {
+  if (documentHidden.value || !renderedToken.value) return
+  const sequence = ++copySequence
+  const copiedValue = renderedToken.value
   try {
-    await writeText(renderedToken.value)
+    await writeText(copiedValue)
+    lastCopiedValue = copiedValue
     copied.value = true
     copyError.value = false
     await useSleep(500)
-    await clearClipboard()
+    await clearClipboard(copiedValue)
     await useSleep(1500)
-    copied.value = false
+    if (sequence === copySequence) copied.value = false
   } catch (error) {
     console.error('Failed to copy:', error)
     copyError.value = true
@@ -303,10 +317,12 @@ const copy = async () => {
 }
 
 const onVisibilityChange = () => {
-  if (document.hidden) clearClipboard()
+  documentHidden.value = document.hidden
+  if (document.hidden) void clearClipboard()
 }
 
 onMounted(async () => {
+  documentHidden.value = document.hidden
   document.addEventListener('visibilitychange', onVisibilityChange)
 
   if (token.value) {
@@ -318,14 +334,17 @@ onMounted(async () => {
     intervalId = setInterval(async () => {
       renderedToken.remainingTime = getRemainingTime(period)
       if (token.value && [1, period].includes(renderedToken.remainingTime)) {
-        await updateToken(token.value!)
+        await updateToken(token.value)
       }
     }, 1000)
   }
 })
 
 onBeforeUnmount(() => {
-  clearInterval(intervalId)
+  void clearClipboard()
+  clearSecretCache()
+  renderedToken.value = ''
+  if (intervalId) clearInterval(intervalId)
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>

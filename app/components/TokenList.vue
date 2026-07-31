@@ -74,7 +74,11 @@ const props = defineProps<{
 }>()
 
 const debouncedQuery = ref(props.searchQuery ?? '')
-let debounceTimer: NodeJS.Timeout | undefined
+const tokenSnapshot = shallowRef(getTokens())
+let debounceTimer: ReturnType<typeof setTimeout> | undefined
+const unsubscribeStore = store.subscribe(() => {
+  tokenSnapshot.value = getTokens()
+})
 
 watch(
   () => props.searchQuery,
@@ -86,10 +90,13 @@ watch(
   },
 )
 
-onBeforeUnmount(() => clearTimeout(debounceTimer))
+onBeforeUnmount(() => {
+  clearTimeout(debounceTimer)
+  unsubscribeStore()
+})
 
 const filteredTokens = computed(() => {
-  const tokens = getTokens()
+  const tokens = tokenSnapshot.value
   if (!debouncedQuery.value) return tokens
   const query = debouncedQuery.value.toLowerCase()
   return tokens.filter((token) => token.otp.label.toLowerCase().includes(query))

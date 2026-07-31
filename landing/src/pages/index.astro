@@ -1,13 +1,16 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import '../styles/global.css';
+import rootPackage from '../../../package.json';
+
+const version = rootPackage.version;
 ---
 
 <Layout title="Yhtua — Secure 2FA Token Manager">
   <!-- Nav -->
   <nav class="fixed top-0 inset-x-0 z-40 border-b border-border bg-base/80 backdrop-blur-xl backdrop-saturate-150">
     <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-      <a href="#" class="flex items-center gap-2.5 group">
+      <a href="/Yhtua/" class="flex items-center gap-2.5 group" aria-label="Yhtua home">
         <img src="/Yhtua/icon.png" alt="Yhtua" class="w-7 h-7 rounded-lg" />
         <span class="text-sm font-bold tracking-tight text-fg">Yhtua</span>
       </a>
@@ -37,13 +40,13 @@ import '../styles/global.css';
         <div class="animate-fade-in">
           <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald/20 bg-emerald-glow mb-8">
             <span class="w-1.5 h-1.5 rounded-full bg-emerald" style="animation: pulse-soft 2s ease-in-out infinite;"></span>
-            <span class="text-[13px] font-medium text-emerald">v2.7.0 — Multi-device sync with tombstones</span>
+            <span class="text-[13px] font-medium text-emerald">Yhtua {version} — security hardening release</span>
           </div>
         </div>
 
         <h1 class="animate-fade-in delay-1 text-[clamp(2.25rem,5vw,3.5rem)] font-extrabold tracking-[-0.03em] leading-[1.1] mb-6">
           <span class="text-fg">Two factors.</span><br />
-          <span class="bg-gradient-to-r from-amber via-amber-dim to-emerald bg-clip-text text-transparent">Zero trust required.</span>
+          <span class="bg-gradient-to-r from-amber via-amber-dim to-emerald bg-clip-text text-transparent">Your codes, under your control.</span>
         </h1>
 
         <p class="animate-fade-in delay-2 text-[17px] text-fg-muted leading-relaxed mb-10 max-w-lg">
@@ -209,7 +212,7 @@ import '../styles/global.css';
             </div>
             <div>
               <h3 class="text-[15px] font-bold text-fg mb-1">Cross-Device Sync</h3>
-              <p class="text-[13px] text-fg-muted leading-relaxed">Sync via any cloud folder. Password-protected backups with PBKDF2 key derivation at 600,000 iterations.</p>
+              <p class="text-[13px] text-fg-muted leading-relaxed">Sync via a folder you choose. New backups use Argon2id password derivation and authenticated encryption.</p>
             </div>
           </div>
         </div>
@@ -223,7 +226,7 @@ import '../styles/global.css';
             </div>
             <div>
               <h3 class="text-[15px] font-bold text-fg mb-1">Native Desktop App</h3>
-              <p class="text-[13px] text-fg-muted leading-relaxed">Built with Tauri and Rust. Lightweight (~5MB), fast, and native to macOS, Windows, and Linux.</p>
+              <p class="text-[13px] text-fg-muted leading-relaxed">Built with Tauri and Rust for macOS, Windows, and Linux. Package size varies by platform.</p>
             </div>
           </div>
         </div>
@@ -285,7 +288,7 @@ import '../styles/global.css';
             <span class="text-fg-muted">It's a choice.</span>
           </h2>
           <p class="text-[15px] text-fg-muted leading-relaxed mb-8">
-            Every design decision prioritizes security. Your TOTP secrets never leave your device unencrypted. No servers, no cloud accounts, no trust required.
+            TOTP secrets are encrypted at rest and sync files are encrypted before they reach your chosen folder. Yhtua has no hosted account service, but it cannot protect against malware running as your OS user.
           </p>
 
           <div class="space-y-3.5">
@@ -303,8 +306,8 @@ import '../styles/global.css';
                 <svg class="w-2.5 h-2.5 text-emerald" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
               </div>
               <div>
-                <p class="text-[14px] font-semibold text-fg">PBKDF2-SHA256 · 600k iterations</p>
-                <p class="text-[13px] text-fg-muted mt-0.5">Key derivation that resists brute-force attacks</p>
+                <p class="text-[14px] font-semibold text-fg">Argon2id · 64 MiB · 3 passes</p>
+                <p class="text-[13px] text-fg-muted mt-0.5">Memory-hard password derivation for new backup files</p>
               </div>
             </div>
             <div class="flex items-start gap-3">
@@ -312,8 +315,8 @@ import '../styles/global.css';
                 <svg class="w-2.5 h-2.5 text-emerald" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
               </div>
               <div>
-                <p class="text-[14px] font-semibold text-fg">Rust crypto via <code class="font-mono text-[12px] bg-elevated px-1.5 py-0.5 rounded border border-border">ring</code></p>
-                <p class="text-[13px] text-fg-muted mt-0.5">Audited crypto library — no browser crypto APIs</p>
+                <p class="text-[14px] font-semibold text-fg">Rust cryptography</p>
+                <p class="text-[13px] text-fg-muted mt-0.5"><code class="font-mono text-[12px] bg-elevated px-1.5 py-0.5 rounded border border-border">ring</code> AES-GCM and RustCrypto Argon2id — no browser crypto APIs</p>
               </div>
             </div>
             <div class="flex items-start gap-3">
@@ -321,8 +324,8 @@ import '../styles/global.css';
                 <svg class="w-2.5 h-2.5 text-emerald" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
               </div>
               <div>
-                <p class="text-[14px] font-semibold text-fg">Zero network calls</p>
-                <p class="text-[13px] text-fg-muted mt-0.5">No analytics, no telemetry. Fully offline capable.</p>
+                <p class="text-[14px] font-semibold text-fg">Offline application logic</p>
+                <p class="text-[13px] text-fg-muted mt-0.5">No analytics or telemetry; cloud-folder clients operate independently of Yhtua.</p>
               </div>
             </div>
           </div>
@@ -337,23 +340,19 @@ import '../styles/global.css';
               <div class="w-2.5 h-2.5 rounded-full bg-green-500/50"></div>
               <span class="ml-2 text-fg-subtle text-[10px]">crypto.rs</span>
             </div>
-            <pre class="text-fg-muted" set:html={`<span class="text-amber">const</span> <span class="text-fg">PBKDF2_ITERATIONS</span>: <span class="text-rose-400">u32</span> = <span class="text-emerald">600_000</span>;
-<span class="text-amber">const</span> <span class="text-fg">KEY_LEN</span>: <span class="text-rose-400">usize</span> = <span class="text-emerald">32</span>;
+            <pre class="text-fg-muted" set:html={`<span class="text-amber">const</span> <span class="text-fg">ARGON2_MEMORY_KIB</span>: <span class="text-rose-400">u32</span> = <span class="text-emerald">64 * 1024</span>;
+<span class="text-amber">const</span> <span class="text-fg">ARGON2_ITERATIONS</span>: <span class="text-rose-400">u32</span> = <span class="text-emerald">3</span>;
+<span class="text-amber">const</span> <span class="text-fg">PASSWORD_AAD</span>: &amp;[<span class="text-rose-400">u8</span>] =
+    <span class="text-emerald">b&quot;yhtua-password-backup-v2&quot;</span>;
 
-<span class="text-fg-subtle">// AES-256-GCM authenticated encryption</span>
-<span class="text-amber">fn</span> <span class="text-fg">encrypt_aes256gcm</span>(
-    plaintext: &amp;<span class="text-rose-400">str</span>,
-    key: &amp;[<span class="text-rose-400">u8</span>],
-) -&gt; <span class="text-rose-400">Result</span>&lt;<span class="text-rose-400">String</span>&gt; {
-    <span class="text-amber">let</span> nonce = generate_random_bytes(<span class="text-emerald">NONCE_LEN</span>);
-    <span class="text-amber">let</span> sealing_key = <span class="text-fg">LessSafeKey</span>::new(
-        <span class="text-fg">UnboundKey</span>::new(&amp;<span class="text-emerald">AES_256_GCM</span>, key)?
-    );
-    sealing_key.seal_in_place_append_tag(
-        nonce, <span class="text-fg">Aad</span>::empty(), &amp;<span class="text-amber">mut</span> data
-    )?;
-    <span class="text-fg">Ok</span>(<span class="text-fg">BASE64</span>.encode(&amp;combined))
-}`} />
+<span class="text-fg-subtle">// Derive a fresh key, then authenticate format + ciphertext.</span>
+<span class="text-amber">let</span> key = derive_argon2id_key(password, &amp;salt)?;
+<span class="text-amber">let</span> ciphertext = seal(
+    plaintext,
+    key.as_ref(),
+    nonce,
+    <span class="text-fg">PASSWORD_AAD</span>,
+)?;`} />
           </div>
         </div>
       </div>
@@ -373,7 +372,7 @@ import '../styles/global.css';
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
         </svg>
-        Download Yhtua v2.7.0
+        Download Yhtua {version}
       </a>
     </div>
   </section>
@@ -383,7 +382,7 @@ import '../styles/global.css';
     <div class="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
       <div class="flex items-center gap-2.5">
         <img src="/Yhtua/icon.png" alt="Yhtua" class="w-5 h-5 rounded" />
-        <span class="text-[13px] text-fg-subtle">Yhtua v2.7.0 · MIT License</span>
+        <span class="text-[13px] text-fg-subtle">Yhtua {version} · MIT License</span>
       </div>
       <div class="flex items-center gap-1.5 text-[13px] text-fg-subtle">
         <span>Made in France by</span>

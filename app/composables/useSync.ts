@@ -1,24 +1,16 @@
-import { join } from '@tauri-apps/api/path'
+import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
-import {
-  exists,
-  mkdir,
-  readDir,
-  readTextFile,
-  remove,
-  rename,
-  writeTextFile,
-} from '@tauri-apps/plugin-fs'
 import { z } from 'zod'
 import {
   decryptSecret,
+  decryptWithSyncPassword,
   decryptWithPassword,
   deleteSyncPassword,
   deleteSyncPath,
   encryptSecret,
+  encryptWithSyncPassword,
   encryptWithPassword,
   ensureEncryptionKey,
-  getSyncPassword,
   getSyncPath,
   hasSyncPassword,
   hasSyncPath,
@@ -27,9 +19,10 @@ import {
 } from './useCrypto'
 import { mergeTokens } from './useMerge'
 import {
-  exportImportSchema,
+  MAX_ENCRYPTED_BACKUP_BYTES,
   getTombstones,
   getTokens,
+  portableBackupMetadataMatches,
   replaceAllTokens,
   setTombstones,
   storeAddToken,
@@ -37,18 +30,15 @@ import {
   type Tombstone,
 } from './useStore'
 
-const BACKUP_FILENAME = 'yhtua_backup.json'
-const BACKUP_SAFETY_PREFIX = 'yhtua_backup.'
-const BACKUP_SAFETY_SUFFIX = '.bak.json'
-const BACKUP_SAFETY_KEEP = 5
 const SYNC_DEBOUNCE_MS = 3000
 const FILE_WATCH_INTERVAL_MS = 10000
-const SYNC_VERSION = '2.2.0'
+const SYNC_VERSION = '2.3.0'
 const STATUS_CACHE_TTL_MS = 5000
 
 let cachedStatus: SyncStatus | null = null
 let statusCacheTime = 0
 let isMerging = false
+let fileOperationActive = false
 
 export const getIsMerging = () => isMerging
 
@@ -85,27 +75,33 @@ export interface SyncResult {
   tokensCount?: number
 }
 
-const syncBackupSchema = z.object({
-  version: z.string(),
-  encrypted: z.literal(true),
-  syncedAt: z.number(),
-  data: z.string(),
-})
+const syncBackupSchema = z
+  .object({
+    version: z.enum(['2.2.0', '2.3.0']),
+    encrypted: z.literal(true),
+    syncedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    data: z.string().min(1).max(MAX_ENCRYPTED_BACKUP_BYTES),
+  })
+  .strict()
 
 const SYNC_METADATA_KEY = 'yhtua_sync_metadata'
 
-interface SyncMetadata {
-  lastSync: number | null
-  lastKnownFileVersion: number | null
-  autoSync: boolean
-  passwordMismatch: boolean
-}
+const syncMetadataSchema = z
+  .object({
+    lastSync: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable(),
+    lastKnownFileVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable(),
+    autoSync: z.boolean(),
+    passwordMismatch: z.boolean().default(false),
+  })
+  .strict()
+
+type SyncMetadata = z.infer<typeof syncMetadataSchema>
 
 const getSyncMetadata = (): SyncMetadata => {
   try {
     const stored = localStorage.getItem(SYNC_METADATA_KEY)
     if (stored) {
-      return JSON.parse(stored)
+      return syncMetadataSchema.parse(parseBoundedJson(stored, 4096, 4))
     }
   } catch (error) {
     console.warn('Failed to read sync metadata:', error)
@@ -170,9 +166,79 @@ export const configureSyncPassword = async (password: string): Promise<void> => 
   invalidateStatusCache()
 }
 
+export const clearSyncPassword = async (): Promise<void> => {
+  await deleteSyncPassword()
+  invalidateStatusCache()
+}
+
+export const changeSyncPassword = async (newPassword: string): Promise<SyncResult> => {
+  if (fileOperationActive) {
+    return { success: false, message: 'Another sync operation is already running' }
+  }
+  fileOperationActive = true
+  try {
+    const status = await getSyncStatus()
+    if (!status.syncPath || !status.hasPassword) {
+      return {
+        success: false,
+        message: 'Sync is not fully configured',
+        errorCode: SyncErrorCode.NotConfigured,
+      }
+    }
+
+    const previousContent = await readSyncBackup()
+    if (previousContent === null) {
+      await storeSyncPassword(newPassword)
+      invalidateStatusCache()
+      return { success: true, message: 'Sync password changed' }
+    }
+
+    const parsed = syncBackupSchema.parse(
+      parseBoundedJson(previousContent, MAX_ENCRYPTED_BACKUP_BYTES),
+    )
+    const decryptedJson = await decryptWithSyncPassword(parsed.data)
+    const decrypted = plaintextBackupSchema.parse(parseBoundedJson(decryptedJson))
+    const syncedAt = Date.now()
+    const encryptedData = await encryptWithPassword(
+      JSON.stringify({ ...decrypted, version: SYNC_VERSION, syncedAt }),
+      newPassword,
+    )
+    const nextContent = JSON.stringify(
+      { ...parsed, version: SYNC_VERSION, syncedAt, data: encryptedData },
+      null,
+      2,
+    )
+
+    await writeSyncBackup(nextContent)
+    try {
+      await storeSyncPassword(newPassword)
+    } catch (error) {
+      // Restore the old-password file if the OS credential update did not commit.
+      await writeSyncBackup(previousContent)
+      throw error
+    }
+
+    setSyncMetadata({ lastSync: syncedAt, lastKnownFileVersion: syncedAt, passwordMismatch: false })
+    invalidateStatusCache()
+    return { success: true, message: 'Sync password changed' }
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Unable to change sync password',
+      errorCode: SyncErrorCode.Unknown,
+    }
+  } finally {
+    fileOperationActive = false
+  }
+}
+
 export const setAutoSync = (enabled: boolean): void => setSyncMetadata({ autoSync: enabled })
 
-const getBackupFilePath = async (): Promise<string> => join(await getSyncPath(), BACKUP_FILENAME)
+const readSyncBackup = (): Promise<string | null> => invoke<string | null>('read_sync_backup')
+
+const syncBackupExists = (): Promise<boolean> => invoke<boolean>('sync_backup_exists')
+
+const writeSyncBackup = (content: string): Promise<void> => invoke('write_sync_backup', { content })
 
 const getPlaintextSecret = async (token: Token): Promise<string> =>
   token.otp.encrypted ? decryptSecret(token.otp.secret) : token.otp.secret
@@ -181,7 +247,6 @@ type RemoteBackup = {
   tokens: Token[]
   tombstones: Tombstone[]
   syncedAt: number
-  rawContent: string
 }
 
 type RemoteReadResult =
@@ -189,14 +254,12 @@ type RemoteReadResult =
   | { kind: 'unreadable'; reason: SyncErrorCode; message: string }
   | { kind: 'ok'; backup: RemoteBackup }
 
-const readRemoteBackup = async (password: string): Promise<RemoteReadResult> => {
-  const filePath = await getBackupFilePath()
-  const fileExists = await exists(filePath)
-  if (!fileExists) return { kind: 'missing' }
-
-  let content: string
+const readRemoteBackup = async (
+  decrypt: (ciphertext: string) => Promise<string>,
+): Promise<RemoteReadResult> => {
+  let content: string | null
   try {
-    content = await readTextFile(filePath)
+    content = await readSyncBackup()
   } catch (error) {
     return {
       kind: 'unreadable',
@@ -204,10 +267,11 @@ const readRemoteBackup = async (password: string): Promise<RemoteReadResult> => 
       message: error instanceof Error ? error.message : 'Failed to read backup file',
     }
   }
+  if (content === null) return { kind: 'missing' }
 
   let raw: unknown
   try {
-    raw = JSON.parse(content)
+    raw = parseBoundedJson(content, MAX_ENCRYPTED_BACKUP_BYTES)
   } catch {
     return {
       kind: 'unreadable',
@@ -227,7 +291,7 @@ const readRemoteBackup = async (password: string): Promise<RemoteReadResult> => 
 
   let decryptedJson: string
   try {
-    decryptedJson = await decryptWithPassword(parsed.data.data, password)
+    decryptedJson = await decrypt(parsed.data.data)
   } catch {
     return {
       kind: 'unreadable',
@@ -238,7 +302,7 @@ const readRemoteBackup = async (password: string): Promise<RemoteReadResult> => 
 
   let decryptedData: unknown
   try {
-    decryptedData = JSON.parse(decryptedJson)
+    decryptedData = parseBoundedJson(decryptedJson)
   } catch {
     return {
       kind: 'unreadable',
@@ -247,8 +311,11 @@ const readRemoteBackup = async (password: string): Promise<RemoteReadResult> => 
     }
   }
 
-  const validationResult = exportImportSchema.safeParse(decryptedData)
-  if (!validationResult.success) {
+  const validationResult = plaintextBackupSchema.safeParse(decryptedData)
+  if (
+    !validationResult.success ||
+    !portableBackupMetadataMatches(parsed.data, validationResult.data)
+  ) {
     return {
       kind: 'unreadable',
       reason: SyncErrorCode.InvalidFormat,
@@ -262,48 +329,15 @@ const readRemoteBackup = async (password: string): Promise<RemoteReadResult> => 
       tokens: validationResult.data.tokens,
       tombstones: validationResult.data.tombstones,
       syncedAt: parsed.data.syncedAt,
-      rawContent: content,
     },
   }
 }
 
-const writeSafetyBackup = async (syncPath: string, content: string): Promise<void> => {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const safetyPath = await join(
-    syncPath,
-    `${BACKUP_SAFETY_PREFIX}${timestamp}${BACKUP_SAFETY_SUFFIX}`,
-  )
-  await writeTextFile(safetyPath, content)
-}
-
-const pruneSafetyBackups = async (syncPath: string): Promise<void> => {
-  try {
-    const entries = await readDir(syncPath)
-    const safetyFiles = entries
-      .filter(
-        (entry) =>
-          !entry.isDirectory &&
-          entry.name.startsWith(BACKUP_SAFETY_PREFIX) &&
-          entry.name.endsWith(BACKUP_SAFETY_SUFFIX),
-      )
-      .map((entry) => entry.name)
-      .sort()
-
-    const stale = safetyFiles.slice(0, Math.max(0, safetyFiles.length - BACKUP_SAFETY_KEEP))
-    for (const name of stale) {
-      try {
-        const path = await join(syncPath, name)
-        await remove(path)
-      } catch (error) {
-        console.warn(`Failed to prune safety backup ${name}:`, error)
-      }
-    }
-  } catch (error) {
-    console.warn('Failed to enumerate safety backups for pruning:', error)
-  }
-}
-
 export const syncToFile = async (): Promise<SyncResult> => {
+  if (fileOperationActive) {
+    return { success: false, message: 'Another sync operation is already running' }
+  }
+  fileOperationActive = true
   try {
     const status = await getSyncStatus()
 
@@ -315,7 +349,7 @@ export const syncToFile = async (): Promise<SyncResult> => {
       }
     }
 
-    if (getTokens().length === 0) {
+    if (getTokens().length === 0 && getTombstones().length === 0) {
       return {
         success: false,
         message: 'No tokens to sync',
@@ -325,18 +359,9 @@ export const syncToFile = async (): Promise<SyncResult> => {
 
     await ensureEncryptionKey()
 
-    const syncPath = await getSyncPath()
-    const password = await getSyncPassword()
-    const filePath = await getBackupFilePath()
-
-    const dirExists = await exists(syncPath)
-    if (!dirExists) {
-      await mkdir(syncPath, { recursive: true })
-    }
-
     // Read remote backup for merge. Abort if cloud file exists but is unreadable —
     // overwriting it would silently destroy whatever data is in it.
-    const remote = await readRemoteBackup(password)
+    const remote = await readRemoteBackup(decryptWithSyncPassword)
     if (remote.kind === 'unreadable') {
       return {
         success: false,
@@ -367,16 +392,17 @@ export const syncToFile = async (): Promise<SyncResult> => {
       remoteTombstones,
     })
 
+    const syncedAt = Date.now()
+
     const backupData = {
       version: SYNC_VERSION,
       encrypted: false,
+      syncedAt,
       tokens: merged.tokens,
       tombstones: merged.tombstones,
     }
 
-    const encryptedData = await encryptWithPassword(JSON.stringify(backupData), password)
-
-    const syncedAt = Date.now()
+    const encryptedData = await encryptWithSyncPassword(JSON.stringify(backupData))
 
     const syncBackup = {
       version: SYNC_VERSION,
@@ -385,21 +411,8 @@ export const syncToFile = async (): Promise<SyncResult> => {
       data: encryptedData,
     }
 
-    // Write a safety copy of the existing remote before overwriting, so a bad
-    // merge or schema bug never destroys the previous good state.
-    if (remote.kind === 'ok') {
-      try {
-        await writeSafetyBackup(syncPath, remote.backup.rawContent)
-        await pruneSafetyBackups(syncPath)
-      } catch (error) {
-        console.warn('Failed to write safety backup:', error)
-      }
-    }
-
-    // Atomic write: temp file then rename, so cloud clients never observe a partial file
-    const tmpPath = await join(syncPath, `${BACKUP_FILENAME}.tmp`)
-    await writeTextFile(tmpPath, JSON.stringify(syncBackup, null, 2))
-    await rename(tmpPath, filePath)
+    // Rust writes a mandatory safety copy and atomically replaces the primary file.
+    await writeSyncBackup(JSON.stringify(syncBackup, null, 2))
 
     // Re-encrypt merged tokens for local storage and update store
     const reEncryptedTokens = await Promise.all(
@@ -433,10 +446,16 @@ export const syncToFile = async (): Promise<SyncResult> => {
       message: error instanceof Error ? error.message : 'Sync failed',
       errorCode: SyncErrorCode.Unknown,
     }
+  } finally {
+    fileOperationActive = false
   }
 }
 
 export const restoreFromFile = async (replaceExisting: boolean = true): Promise<SyncResult> => {
+  if (fileOperationActive) {
+    return { success: false, message: 'Another sync operation is already running' }
+  }
+  fileOperationActive = true
   try {
     const status = await getSyncStatus()
 
@@ -456,9 +475,7 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       }
     }
 
-    const password = await getSyncPassword()
-
-    const remote = await readRemoteBackup(password)
+    const remote = await readRemoteBackup(decryptWithSyncPassword)
     if (remote.kind === 'missing') {
       return {
         success: false,
@@ -530,13 +547,13 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       })),
     )
 
-    storeAddToken(reEncryptedTokens)
+    const importedCount = storeAddToken(reEncryptedTokens)
     setSyncMetadata({ lastKnownFileVersion: remote.backup.syncedAt })
 
     return {
       success: true,
       message: 'Restored successfully',
-      tokensCount: reEncryptedTokens.length,
+      tokensCount: importedCount,
     }
   } catch (error) {
     isMerging = false
@@ -546,6 +563,8 @@ export const restoreFromFile = async (replaceExisting: boolean = true): Promise<
       message: error instanceof Error ? error.message : 'Restore failed',
       errorCode: SyncErrorCode.Unknown,
     }
+  } finally {
+    fileOperationActive = false
   }
 }
 
@@ -554,8 +573,7 @@ export const hasBackupFile = async (): Promise<boolean> => {
     const status = await getSyncStatus()
     if (!status.syncPath) return false
 
-    const filePath = await getBackupFilePath()
-    return await exists(filePath)
+    return await syncBackupExists()
   } catch (error) {
     console.warn('Failed to check backup file:', error)
     return false
@@ -573,24 +591,27 @@ export const getBackupInfo = async (
     const syncStatus = status ?? (await getSyncStatus())
     if (!syncStatus.syncPath || !syncStatus.hasPassword) return null
 
-    const filePath = await getBackupFilePath()
-    const fileExists = await exists(filePath)
+    const fileExists = await syncBackupExists()
 
     if (!fileExists) {
       return { exists: false, syncedAt: null, tokensCount: null }
     }
 
-    const content = await readTextFile(filePath)
-    const parsed = syncBackupSchema.safeParse(JSON.parse(content))
+    const content = await readSyncBackup()
+    if (content === null) return { exists: false, syncedAt: null, tokensCount: null }
+    const parsed = syncBackupSchema.safeParse(parseBoundedJson(content, MAX_ENCRYPTED_BACKUP_BYTES))
 
     if (!parsed.success) {
       return { exists: true, syncedAt: null, tokensCount: null }
     }
 
     try {
-      const password = await getSyncPassword()
-      const decryptedJson = await decryptWithPassword(parsed.data.data, password)
-      const decryptedData = JSON.parse(decryptedJson)
+      const decryptedJson = await decryptWithSyncPassword(parsed.data.data)
+      const decryptedData = plaintextBackupSchema.parse(parseBoundedJson(decryptedJson))
+
+      if (!portableBackupMetadataMatches(parsed.data, decryptedData)) {
+        return { exists: true, syncedAt: null, tokensCount: null }
+      }
 
       return {
         exists: true,
@@ -618,7 +639,7 @@ export const disableSync = async (): Promise<void> => {
   invalidateStatusCache()
 }
 
-let syncTimeout: NodeJS.Timeout | null = null
+let syncTimeout: ReturnType<typeof setTimeout> | null = null
 
 export const triggerDebouncedSync = () => {
   if (syncTimeout) {
@@ -640,7 +661,7 @@ export const cancelPendingSync = () => {
   }
 }
 
-let fileWatchInterval: NodeJS.Timeout | null = null
+let fileWatchInterval: ReturnType<typeof setInterval> | null = null
 let isCheckingForUpdates = false
 
 let passwordMismatchCallback: ((remoteVersion: number) => void) | null = null
@@ -650,13 +671,17 @@ export const onPasswordMismatch = (callback: ((remoteVersion: number) => void) |
 }
 
 export const tryRestoreWithPassword = async (password: string): Promise<SyncResult> => {
+  if (fileOperationActive) {
+    return { success: false, message: 'Another sync operation is already running' }
+  }
+  fileOperationActive = true
   try {
     const status = await getSyncStatus()
     if (!status.syncPath) {
       return { success: false, message: 'Sync path not configured' }
     }
 
-    const remote = await readRemoteBackup(password)
+    const remote = await readRemoteBackup((ciphertext) => decryptWithPassword(ciphertext, password))
     if (remote.kind === 'missing') {
       return { success: false, message: 'No backup file found' }
     }
@@ -716,6 +741,8 @@ export const tryRestoreWithPassword = async (password: string): Promise<SyncResu
       success: false,
       message: error instanceof Error ? error.message : 'Restore failed',
     }
+  } finally {
+    fileOperationActive = false
   }
 }
 
@@ -724,12 +751,12 @@ const getFileSyncedAt = async (): Promise<number | null> => {
     const status = await getSyncStatus()
     if (!status.syncPath) return null
 
-    const filePath = await getBackupFilePath()
-    const fileExists = await exists(filePath)
+    const fileExists = await syncBackupExists()
     if (!fileExists) return null
 
-    const content = await readTextFile(filePath)
-    const parsed = syncBackupSchema.safeParse(JSON.parse(content))
+    const content = await readSyncBackup()
+    if (content === null) return null
+    const parsed = syncBackupSchema.safeParse(parseBoundedJson(content, MAX_ENCRYPTED_BACKUP_BYTES))
 
     return parsed.success ? parsed.data.syncedAt : null
   } catch (error) {

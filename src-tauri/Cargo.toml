@@ -1,12 +1,16 @@
 [package]
 name = "yhtua"
-version = "2.7.2"
-description = "Yhtua - Open Source 2FA Token Manager"
-authors = ["Yoann Gendrey"]
+version = "2.8.0"
+description = "Open-source encrypted TOTP token manager for desktop"
+authors = ["Yoann Gendrey <yoann@gendrey.fr>"]
 license = "MIT"
 repository = "https://github.com/iiAku/Yhtua"
-edition = "2021"
-rust-version = "1.77.2"
+homepage = "https://iiaku.github.io/Yhtua/"
+edition = "2024"
+rust-version = "1.93.1"
+
+[features]
+fuzzing = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -15,28 +19,30 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.5.5", features = [] }
+tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.10", features = [] }
-tauri-plugin-log = "2.8"
-tauri-plugin-dialog = "2.4.2"
-tauri-plugin-fs = "2.4"
+tauri = { version = "2.11.5", features = [] }
+tauri-plugin-log = "2.9.0"
+tauri-plugin-dialog = "2.7.2"
 
 # Crypto dependencies
 ring = "0.17"
-base64 = "0.22"
-rand = "0.8"
+base64 = "0.23"
 thiserror = "2"
 dirs = "6"
-whoami = "1.5"
+whoami = "2.1"
 tauri-plugin-clipboard-manager = "2.3.2"
+argon2 = { version = "0.5.3", features = ["zeroize"] }
+zeroize = { version = "1.9", features = ["derive"] }
+atomic-write-file = "0.3.0"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3", features = ["linux-native"] }
+keyring = "4.1.5"
 
-[target.'cfg(not(target_os = "linux"))'.dependencies]
-keyring = "3"
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"

@@ -1,9 +1,8 @@
 @import 'tailwindcss';
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 @theme {
-  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', monospace;
 
   --color-vault-base: #0a0b10;
   --color-vault-surface: #111318;
@@ -67,6 +66,11 @@ body::before {
   display: none;
 }
 
+:focus-visible {
+  outline: 2px solid var(--color-vault-accent);
+  outline-offset: 3px;
+}
+
 /* Page transitions */
 .page-enter-active {
   transition: opacity 0.08s ease-out;
@@ -128,4 +132,15 @@ body::before {
 
 .animate-shimmer {
   animation: shimmer 1s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

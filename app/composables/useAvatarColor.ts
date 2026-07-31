@@ -15,5 +15,5 @@ const hashLabel = (label: string) => {
   return Math.abs(hash) % palette.length
 }
 
-export const avatarBgClass = (label: string) => palette[hashLabel(label)].bg
-export const avatarTextClass = (label: string) => palette[hashLabel(label)].text
+export const avatarBgClass = (label: string) => palette[hashLabel(label)]?.bg ?? palette[0].bg
+export const avatarTextClass = (label: string) => palette[hashLabel(label)]?.text ?? palette[0].text

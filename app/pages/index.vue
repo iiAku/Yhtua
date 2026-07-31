@@ -29,6 +29,7 @@
           <input
             id="search"
             name="search"
+            aria-label="Search tokens"
             class="block w-full rounded-xl border-0 bg-vault-elevated py-2 pl-9 pr-3 text-vault-text text-sm font-medium placeholder:text-vault-text-muted ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-accent/40 focus:bg-vault-surface transition-all"
             placeholder="Search tokens..."
             type="search"
@@ -161,7 +162,6 @@ const refreshBackupPrompt = async () => {
 }
 
 onMounted(refreshBackupPrompt)
-onActivated(refreshBackupPrompt)
 </script>
 
 <style scoped>

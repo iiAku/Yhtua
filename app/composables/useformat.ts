@@ -9,7 +9,7 @@ export const getAvatarPlaceholder = (name: string) => {
   const parts = cleaned.split(/\s+/).filter(Boolean)
 
   if (parts.length === 1) {
-    return [...parts[0]].slice(0, 3).join('')
+    return [...(parts[0] ?? '')].slice(0, 3).join('')
   }
 
   return parts

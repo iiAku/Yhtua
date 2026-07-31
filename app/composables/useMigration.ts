@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { encryptSecret, initializeEncryption, isEncryptionReady } from './useCrypto'
-import { CURRENT_STORE_VERSION, getStoreVersion, StoreVersion, store, type Token } from './useStore'
+import { CURRENT_STORE_VERSION, getStoreVersion, store, type Token } from './useStore'
 
 export interface MigrationResult {
   migrated: boolean
@@ -54,8 +54,8 @@ export const migrateToEncryptedStore = async (): Promise<MigrationResult> => {
               encrypted: true,
             },
           }
-        } catch (error) {
-          console.error(`Failed to encrypt token ${token.id}:`, error)
+        } catch {
+          console.error('Failed to encrypt a token during migration')
           failedTokenIds.push(token.id)
           return token
         }
@@ -68,10 +68,7 @@ export const migrateToEncryptedStore = async (): Promise<MigrationResult> => {
     })
 
     if (failedTokenIds.length > 0) {
-      console.warn(
-        `Migration completed with ${failedTokenIds.length} failed tokens:`,
-        failedTokenIds,
-      )
+      console.warn(`Migration completed with ${failedTokenIds.length} failed tokens`)
     }
 
     return {
@@ -116,27 +113,26 @@ const migrateCredentialsToKeychain = async (): Promise<void> => {
     const raw = localStorage.getItem(LEGACY_CRYPTO_STORE_KEY)
     if (!raw) return
 
-    const parsed = JSON.parse(raw)
-    const state = parsed?.state
-    if (!state) return
+    const parsed = parseBoundedJson(raw, 64 * 1024, 8)
+    if (!parsed || typeof parsed !== 'object' || !('state' in parsed)) return
+    const state = parsed.state
+    if (!state || typeof state !== 'object') return
 
-    let migrated = false
+    const encryptionKey =
+      'encryptionKey' in state && typeof state.encryptionKey === 'string'
+        ? state.encryptionKey
+        : null
+    const syncPassword =
+      'syncPassword' in state && typeof state.syncPassword === 'string' ? state.syncPassword : null
+    const syncPath =
+      'syncPath' in state && typeof state.syncPath === 'string' ? state.syncPath : null
+    if (!encryptionKey && !syncPassword && !syncPath) return
 
-    // Sequential to avoid racing on the shared fallback credentials file
-    if (typeof state.encryptionKey === 'string') {
-      await invoke('store_encryption_key', { keyBase64: state.encryptionKey })
-      migrated = true
-    }
-    if (typeof state.syncPassword === 'string') {
-      await invoke('store_sync_password', { password: state.syncPassword })
-      migrated = true
-    }
-    if (typeof state.syncPath === 'string') {
-      await invoke('store_sync_path', { path: state.syncPath })
-      migrated = true
-    }
-
-    if (!migrated) return
+    await invoke('migrate_legacy_frontend_credentials', {
+      encryptionKey,
+      syncPassword,
+      syncPath,
+    })
 
     localStorage.removeItem(LEGACY_CRYPTO_STORE_KEY)
     console.log('Migrated credentials from localStorage to keychain')

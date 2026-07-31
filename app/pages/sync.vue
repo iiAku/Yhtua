@@ -11,11 +11,13 @@
     />
 
     <!-- Password Mismatch Modal -->
-    <div
+    <Dialog
       v-if="showPasswordMismatchModal"
+      as="div"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      @close="closePasswordMismatchModal"
     >
-      <div
+      <DialogPanel
         class="bg-vault-surface border border-vault-border rounded-2xl p-5 mx-4 max-w-sm w-full shadow-2xl shadow-black/30"
       >
         <div class="flex items-center gap-3 mb-4">
@@ -37,7 +39,9 @@
             </svg>
           </div>
           <div>
-            <h3 class="text-vault-text font-semibold text-sm">Password Mismatch</h3>
+            <DialogTitle as="h3" class="text-vault-text font-semibold text-sm">
+              Password Mismatch
+            </DialogTitle>
             <p class="text-vault-text-secondary text-xs">
               Sync password was changed on another device
             </p>
@@ -53,6 +57,7 @@
           <input
             v-model="recoveryPassword"
             type="password"
+            aria-label="New sync password"
             placeholder="Enter new sync password"
             class="w-full rounded-xl border-0 bg-vault-elevated px-3.5 py-2.5 text-vault-text text-sm ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-indigo/40 placeholder:text-vault-text-muted transition-all"
             @keyup.enter="tryRecoverWithPassword"
@@ -79,8 +84,8 @@
         <p class="text-vault-text-muted text-xs mt-3 text-center">
           "Keep Local" disables sync and preserves your current tokens.
         </p>
-      </div>
-    </div>
+      </DialogPanel>
+    </Dialog>
 
     <Navbar />
     <div class="flex-1 overflow-y-auto px-4 py-3">
@@ -165,12 +170,14 @@
             <input
               v-model="password"
               type="password"
+              aria-label="Sync password"
               placeholder="Enter sync password"
               class="w-full rounded-xl border-0 bg-vault-input px-3.5 py-2.5 text-vault-text text-sm ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-indigo/40 placeholder:text-vault-text-muted transition-all"
             />
             <input
               v-model="passwordConfirm"
               type="password"
+              aria-label="Confirm sync password"
               placeholder="Confirm password"
               class="w-full rounded-xl border-0 bg-vault-input px-3.5 py-2.5 text-vault-text text-sm ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-indigo/40 placeholder:text-vault-text-muted transition-all"
             />
@@ -217,6 +224,7 @@
                 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out',
               ]"
               role="switch"
+              aria-label="Auto sync"
               :aria-checked="syncStatus.autoSync"
             >
               <span
@@ -331,8 +339,11 @@
 </template>
 
 <script setup lang="ts">
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/vue'
 import {
   checkForRemoteUpdates,
+  changeSyncPassword,
+  clearSyncPassword,
   configureSyncPassword,
   configureSyncPath,
   disableSync,
@@ -340,6 +351,7 @@ import {
   getSyncStatus,
   onPasswordMismatch,
   restoreFromFile,
+  SyncErrorCode,
   type SyncStatus,
   setAutoSync,
   startFileWatcher,
@@ -452,43 +464,75 @@ const selectSyncFolder = async () => {
 }
 
 const savePassword = async () => {
-  if (password.value && password.value === passwordConfirm.value) {
-    await configureSyncPassword(password.value)
-    password.value = ''
-    passwordConfirm.value = ''
-    showPasswordInput.value = false
-    await refreshStatus()
+  if (!password.value || password.value.length < 8 || password.value !== passwordConfirm.value) {
+    return
+  }
 
-    if (syncStatus.value.enabled) {
-      syncing.value = true
-      try {
+  syncing.value = true
+  const changingExistingPassword = syncStatus.value.hasPassword
+  try {
+    if (changingExistingPassword) {
+      // Merge pending local changes while the current remote password still works.
+      if (getTokens().length > 0 || getTombstones().length > 0) {
         const result = await syncToFile()
-        if (result.success) {
-          await refreshStatus()
+        if (!result.success) {
+          if (result.errorCode === SyncErrorCode.WrongPassword) {
+            showPasswordMismatchModal.value = true
+          }
           await useShowNotification(notification, {
-            text: `Backup created with ${result.tokensCount} tokens`,
-            delay: 1500,
-          })
-        } else {
-          await useShowNotification(notification, {
-            text: result.message,
+            text: `Password not changed: ${result.message}`,
             delay: 2000,
             type: NotificationType.Danger,
           })
+          return
         }
-      } finally {
-        syncing.value = false
       }
 
-      if (syncStatus.value.autoSync) {
-        startFileWatcher()
+      const result = await changeSyncPassword(password.value)
+      if (!result.success) {
+        await useShowNotification(notification, {
+          text: result.message,
+          delay: 2000,
+          type: NotificationType.Danger,
+        })
+        return
       }
     } else {
-      await useShowNotification(notification, {
-        text: 'Sync password saved',
-        delay: 1500,
-      })
+      await configureSyncPassword(password.value)
+      await refreshStatus(true)
+      if (syncStatus.value.enabled && (getTokens().length > 0 || getTombstones().length > 0)) {
+        const result = await syncToFile()
+        if (!result.success) {
+          await clearSyncPassword()
+          await refreshStatus(true)
+          await useShowNotification(notification, {
+            text: `Password was not saved because the initial sync failed: ${result.message}`,
+            delay: 2500,
+            type: NotificationType.Danger,
+          })
+          return
+        }
+      }
     }
+
+    password.value = ''
+    passwordConfirm.value = ''
+    showPasswordInput.value = false
+    await refreshStatus(true)
+
+    if (syncStatus.value.autoSync) startFileWatcher()
+    await useShowNotification(notification, {
+      text: changingExistingPassword ? 'Sync password changed' : 'Sync password saved',
+      delay: 1500,
+    })
+  } catch (error) {
+    await useShowNotification(notification, {
+      text: error instanceof Error ? error.message : 'Unable to save sync password',
+      delay: 2000,
+      type: NotificationType.Danger,
+    })
+  } finally {
+    syncing.value = false
   }
 }
 
@@ -530,7 +574,7 @@ const showRestoreConfirm = () => {
   modalAction.value = 'restore'
   useShowModal(modal.value.Danger, {
     title: 'Restore from Backup',
-    text: `This will replace your ${getTokens().length} local tokens with ${backupInfo.value?.tokensCount ?? 'unknown'} tokens from backup. Continue?`,
+    text: `This will merge your ${getTokens().length} local tokens with ${backupInfo.value?.tokensCount ?? 'unknown'} tokens from backup. Newer changes and deletions win. Continue?`,
     validateTextButton: 'Restore',
     cancelTextButton: 'Cancel',
     type: 'Danger',
@@ -590,6 +634,12 @@ const handlePasswordMismatch = (_remoteVersion: number) => {
   recoveryError.value = ''
 }
 
+const closePasswordMismatchModal = () => {
+  showPasswordMismatchModal.value = false
+  recoveryPassword.value = ''
+  recoveryError.value = ''
+}
+
 const tryRecoverWithPassword = async () => {
   if (!recoveryPassword.value) return
 
@@ -599,8 +649,7 @@ const tryRecoverWithPassword = async () => {
   try {
     const result = await tryRestoreWithPassword(recoveryPassword.value)
     if (result.success) {
-      showPasswordMismatchModal.value = false
-      recoveryPassword.value = ''
+      closePasswordMismatchModal()
       await refreshStatus()
 
       if (syncStatus.value.enabled && syncStatus.value.autoSync) {
@@ -620,7 +669,7 @@ const tryRecoverWithPassword = async () => {
 }
 
 const keepLocalAndDisableSync = async () => {
-  showPasswordMismatchModal.value = false
+  closePasswordMismatchModal()
   stopFileWatcher()
   await disableSync()
   await refreshStatus()
@@ -634,5 +683,10 @@ onMounted(async () => {
   onPasswordMismatch(handlePasswordMismatch)
   await refreshStatus()
 })
-onUnmounted(() => onPasswordMismatch(null))
+onUnmounted(() => {
+  onPasswordMismatch(null)
+  password.value = ''
+  passwordConfirm.value = ''
+  recoveryPassword.value = ''
+})
 </script>

@@ -3,7 +3,13 @@ import { decryptSecret, encryptSecret } from './useCrypto'
 
 const SECRET_CACHE_TTL_MS = 30 * 1000
 
-const secretCache = new Map<string, { value: string; expiresAt: number }>()
+type SecretCacheEntry = {
+  value: string
+  expiresAt: number
+  timer: ReturnType<typeof setTimeout>
+}
+
+const secretCache = new Map<string, SecretCacheEntry>()
 
 export const getCachedSecret = async (
   encryptedSecret: string,
@@ -13,16 +19,25 @@ export const getCachedSecret = async (
 
   const cached = secretCache.get(encryptedSecret)
   if (cached && Date.now() < cached.expiresAt) return cached.value
+  if (cached) clearTimeout(cached.timer)
 
   const decrypted = await decryptSecret(encryptedSecret)
+  const timer = setTimeout(() => {
+    const entry = secretCache.get(encryptedSecret)
+    if (entry?.value === decrypted) secretCache.delete(encryptedSecret)
+  }, SECRET_CACHE_TTL_MS)
   secretCache.set(encryptedSecret, {
     value: decrypted,
     expiresAt: Date.now() + SECRET_CACHE_TTL_MS,
+    timer,
   })
   return decrypted
 }
 
-export const clearSecretCache = () => secretCache.clear()
+export const clearSecretCache = () => {
+  for (const entry of secretCache.values()) clearTimeout(entry.timer)
+  secretCache.clear()
+}
 
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
@@ -53,8 +68,6 @@ export const getToken = async ({
   value: string
   remainingTime: number
 }> => {
-  const MAX_RETRIES = 3
-
   const plaintextSecret = await getCachedSecret(secret, encrypted)
 
   const totp = new OTPAuth.TOTP({
@@ -66,29 +79,10 @@ export const getToken = async ({
     secret: OTPAuth.Secret.fromBase32(plaintextSecret.toUpperCase()),
   })
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const value = totp.generate()
-    const delta = totp.validate({ token: value, window: 1 })
-
-    if (delta !== null) {
-      return { value, remainingTime: getRemainingTime(period) }
-    }
-
-    await useSleep(attempt * 10)
-  }
-
-  throw new Error('Failed to generate valid token after retries')
+  return { value: totp.generate(), remainingTime: getRemainingTime(period) }
 }
 
 const randomId = () => crypto.randomUUID()
-
-export const isDuplicateSecret = (secret: string): Token | undefined =>
-  getTokens().find(
-    (token) => !token.otp.encrypted && token.otp.secret.toUpperCase() === secret.toUpperCase(),
-  )
-
-export const isDuplicateLabel = (label: string): Token | undefined =>
-  getTokens().find((token) => token.otp.label.toLowerCase() === label.toLowerCase())
 
 export const createNewToken = async (
   secret: string,
@@ -105,19 +99,5 @@ export const createNewToken = async (
     period: 30,
     secret: await encryptSecret(secret),
     encrypted: true,
-  },
-})
-
-export const createNewTokenPlaintext = (secret: string, label: string, digits: number): Token => ({
-  id: randomId(),
-  updatedAt: Date.now(),
-  otp: {
-    issuer: 'issuer',
-    label,
-    algorithm: 'SHA1',
-    digits,
-    period: 30,
-    secret,
-    encrypted: false,
   },
 })

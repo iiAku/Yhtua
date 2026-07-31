@@ -1,0 +1,61 @@
+[graph]
+all-features = true
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+]
+
+[advisories]
+unsound = "all"
+ignore = [
+  { id = "RUSTSEC-2024-0411", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
+  { id = "RUSTSEC-2024-0412", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
+  { id = "RUSTSEC-2024-0413", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
+  { id = "RUSTSEC-2024-0414", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
+  { id = "RUSTSEC-2024-0415", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
+  { id = "RUSTSEC-2024-0416", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
+  { id = "RUSTSEC-2024-0417", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
+  { id = "RUSTSEC-2024-0418", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
+  { id = "RUSTSEC-2024-0419", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
+  { id = "RUSTSEC-2024-0420", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
+  { id = "RUSTSEC-2024-0429", reason = "Transitive Tauri GTK3 glib iterator API that Yhtua does not call; no compatible replacement is available" },
+  { id = "RUSTSEC-2024-0370", reason = "Transitive through Tauri's GTK3 bindings; not used by Yhtua production code" },
+  { id = "RUSTSEC-2025-0075", reason = "Transitive through Tauri urlpattern; no compatible replacement can be selected downstream" },
+  { id = "RUSTSEC-2025-0080", reason = "Transitive through Tauri urlpattern; no compatible replacement can be selected downstream" },
+  { id = "RUSTSEC-2025-0081", reason = "Transitive through Tauri urlpattern; no compatible replacement can be selected downstream" },
+  { id = "RUSTSEC-2025-0098", reason = "Transitive through Tauri urlpattern; no compatible replacement can be selected downstream" },
+  { id = "RUSTSEC-2025-0100", reason = "Transitive through Tauri urlpattern; no compatible replacement can be selected downstream" },
+]
+
+[licenses]
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Zlib",
+]
+confidence-threshold = 0.8
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

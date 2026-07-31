@@ -1,212 +1,72 @@
-# Yhtua Mobile Strategy — Research & Decisions
+# Mobile strategy (planning note)
 
-## Context
+Status: exploratory; Yhtua 2.8 supports desktop only. Last reviewed: 2026-07-31.
 
-Yhtua is a desktop 2FA token manager built with Tauri 2 (Rust backend) + Nuxt 4 (Vue 3 frontend). The goal is to ship on iOS and Android while preserving the battle-tested Rust crypto layer (`ring` — AES-256-GCM, PBKDF2, HMAC-SHA256).
+Mobile framework capabilities, store policies, pricing, and ecosystem maturity change frequently. Revalidate this note against current primary documentation before committing to an implementation or budget.
 
-## Framework Evaluation
+## Non-negotiable security requirements
 
-### Tauri Mobile
+A mobile client must preserve the desktop format and threat-model properties:
 
-- Tauri 2 has stable mobile support (Oct 2024) but **no confirmed production apps on App/Play Store** as of early 2026
-- Spacedrive explored Tauri Mobile, ended up using React Native
-- Android WebView fragmentation is a known pain point
-- Biometrics, push notifications, deep linking plugins are immature
-- Lowest effort path (~days) since codebase already uses Tauri, but risky for a consumer 2FA app
+- new local ciphertext uses the authenticated `YHL2` AES-256-GCM format;
+- new portable backups use the `YHP2` Argon2id (64 MiB, 3 passes, 1 lane) plus AES-256-GCM format;
+- supported PBKDF2/AES-GCM files remain read-compatible only;
+- encryption keys use Keychain/Keystore-backed storage and fail closed when secure storage is unavailable;
+- no secret, key, password, or generated code enters logs, analytics, URLs, crash metadata, or unencrypted persistence;
+- biometric access gates secure-key use rather than replacing encryption;
+- import, clipboard, backgrounding, screenshots, backup, and sync receive platform-specific abuse tests.
 
-**Verdict**: good for prototype/validation, not recommended for a polished consumer release.
+The current formats are documented in [backup-format.md](backup-format.md). There is no separate HMAC layer: AES-GCM supplies ciphertext integrity, and version 2.3 repeats sync metadata inside the authenticated plaintext.
 
-### Kotlin Multiplatform (KMP) + Compose Multiplatform
+## Options to prototype
 
-- Truly native UI, first-class biometric/Keystore/Keychain access
-- Rust crypto bridgeable via UniFFI + Gobley Gradle plugin (proven at scale by Mozilla Firefox, Element/Matrix E2EE, Zcash)
-- Requires Mac for iOS builds
-- Full UI rewrite (Vue → Compose)
-- Smaller developer ecosystem than React Native
-- ~3-4 weeks to MVP
+### Tauri 2 mobile
 
-**Verdict**: strong option if native UI matters or team knows Kotlin. Overkill for a 5-screen utility app.
+Tauri officially documents Android and iOS targets, store distribution, mobile plugins, capabilities, biometrics, clipboard, and deep links. This path maximizes reuse of the current Vue UI, Rust commands, schemas, and capability model. It still requires device testing across WebView versions and a review of each plugin's mobile implementation and secure-storage behavior.
 
-### Expo (React Native) — Recommended
+Start here for the smallest proof of concept, but do not infer production readiness from desktop test results. iOS development still requires macOS and Xcode.
 
-- Most mature mobile ecosystem (10+ years, thousands of shipped apps)
-- Batteries included: `expo-secure-store` (Keychain/Keystore), `expo-local-authentication` (biometrics), `expo-clipboard`
-- EAS Build: cloud iOS builds from Linux (no Mac needed)
-- OTA updates: push JS fixes without App Store review
-- Rust crypto bridgeable via `uniffi-bindgen-react-native` (same UniFFI crate)
-- Full UI rewrite (Vue → React), but CLAUDE.md already documents extensive React patterns
-- ~2-3 weeks to MVP
+### React Native with Expo
 
-**Verdict**: best balance of ecosystem maturity, developer experience, and shipping speed.
+Expo provides documented SecureStore, LocalAuthentication, and Clipboard modules and managed build/update services. It offers a broad mobile-oriented API surface but requires a Vue-to-React UI rewrite and either a reviewed native bridge to Rust or a separate cryptographic implementation. SecureStore persistence, biometric invalidation, backup behavior, and platform limits must be tested explicitly.
+
+### Kotlin/Compose Multiplatform
+
+This offers native Android integration and shared Kotlin UI/business code, with an iOS target and a possible UniFFI bridge to Rust. It is a larger rewrite and introduces Kotlin/Gradle and native bridge maintenance. Consider it when native UI control outweighs reuse of the existing frontend.
 
 ### Flutter
 
-- Rewrite everything including crypto layer (Dart has no `ring` equivalent at same trust level)
-- Two codebases to maintain
-- Not recommended given existing Rust investment
+Flutter also implies a full UI rewrite and a maintained Dart-to-Rust bridge if the existing format implementation is retained. Do not reimplement the cryptographic formats solely to accommodate a framework choice.
 
-## Architecture — Expo Path
+## Recommended decision process
 
-### Shared Rust Crypto Crate
+1. Extract format/crypto primitives from `src-tauri/src/crypto.rs` into a platform-neutral Rust crate without keychain, filesystem, logging, or Tauri dependencies.
+2. Build a time-boxed Tauri mobile spike covering Keychain/Keystore access, biometric gating, background secret clearing, clipboard ownership, import/export, and one real iOS and Android device.
+3. In parallel, validate a minimal Expo native bridge only if the Tauri spike exposes a blocking WebView, plugin, accessibility, or store-distribution issue.
+4. Compare measured startup time, binary size, accessibility, device coverage, maintenance burden, and security-test results. Do not decide from ecosystem popularity claims.
+5. Add mobile CI, signing, store privacy disclosures, migration tests, and a separate threat-model review before advertising mobile support.
 
-Extract pure crypto functions from `src-tauri/src/crypto.rs` into a standalone crate:
+## Shared Rust crate boundary
 
-```
-yhtua-crypto/
-├── Cargo.toml          # deps: uniffi, ring, base64, rand, thiserror
-├── src/
-│   └── lib.rs          # uniffi-annotated pure crypto functions
-```
+A future shared crate should expose typed operations such as:
 
-Functions to expose via UniFFI:
-- `encrypt_with_key` / `decrypt_with_key` (AES-256-GCM)
-- `encrypt_with_password` / `decrypt_with_password` (PBKDF2 + AES-256-GCM)
-- `generate_encryption_key`
-- `hmac_sha256` / `verify_hmac_sha256`
+- random-key generation;
+- local `YHL2` encrypt/decrypt;
+- portable `YHP2` encrypt/decrypt;
+- legacy PBKDF2 backup decryption;
+- strict envelope parsing and format-version errors.
 
-Platform-specific (NOT bridged, rewritten natively):
-- Keychain/Keystore access → `expo-secure-store`
-- Biometric unlock → `expo-local-authentication`
-- File paths → Expo FileSystem
-- Clipboard → `expo-clipboard`
+Keychain/Keystore access, biometrics, file selection, clipboard, lifecycle, and UI remain platform adapters. Keep secret-bearing arguments out of generic error text and zeroize Rust buffers where practical.
 
-### Project Structure
+## Updates and store policy
 
-```
-yhtua/
-├── src-tauri/              # existing desktop app (unchanged)
-├── app/                    # existing Vue/Nuxt desktop frontend (unchanged)
-├── yhtua-crypto/           # extracted Rust crate (shared between desktop + mobile)
-├── mobile/                 # new Expo app
-│   ├── app/                # Expo Router (file-based routing)
-│   ├── components/
-│   ├── hooks/
-│   ├── stores/             # Zustand
-│   └── app.json
-├── landing/                # existing Astro landing page
-```
+The default release channel should remain signed store updates. Do not enable executable over-the-air updates until their integrity, rollback, disclosure, and review-policy implications have been assessed. Apple's current App Review Guideline 2.5.2 restricts downloaded code that changes app functionality, so any update mechanism must be reviewed against the policy in force at submission time.
 
-Desktop Tauri app keeps importing crypto.rs directly (thin wrappers around shared crate). Mobile app imports the same crypto via UniFFI bindings.
+## Primary references
 
-### Code Sharing Between Desktop and Mobile
-
-Desktop is Vue, mobile is React — UI components are NOT shared. Shared layer is limited to:
-- Rust crypto crate (via Tauri commands on desktop, via UniFFI on mobile)
-- Zod schemas / types (can be extracted to a shared TS package)
-- Business logic (TOTP generation, token parsing)
-
-A full unification (one codebase, all platforms) would require rewriting desktop to React Native Web in Expo, wrapped in Tauri. Not worth it for 5 screens — unify later if maintaining two UIs becomes a burden.
-
-## Cost
-
-| Item | Cost |
-|---|---|
-| Expo + EAS (free tier) | $0 (30 builds/month) |
-| Apple Developer Program | $99/year |
-| Google Play Developer | $25 one-time |
-| Mac for iOS | $0 (EAS builds in cloud) |
-| **Year 1 total** | **$124** |
-| **Subsequent years** | **$99/year** |
-
-### Avoiding EAS Build Limits
-
-EAS Build is not self-hostable, but you don't need it:
-- Android: build locally or in GitLab CI (standard `./gradlew assembleRelease`)
-- iOS: 30 free builds/month is plenty; alternatively, a Mac Mini (~$600) as GitLab runner for unlimited builds
-
-## OTA Updates
-
-### Recommended: Simple Version Check (start here)
-
-No Expo OTA dependency. Check GitHub Releases API on launch:
-
-```typescript
-const latest = await fetch(
-  "https://api.github.com/repos/iiAku/Yhtua/releases/latest"
-).then((r) => r.json());
-
-if (semver.gt(latest.tag_name, APP_VERSION)) {
-  showUpdateBanner(latest.tag_name);
-}
-```
-
-### Optional: Self-Hosted expo-updates (add later if needed)
-
-Point `expo-updates` at your own server instead of EAS Update:
-
-```json
-{
-  "expo": {
-    "updates": {
-      "url": "https://updates.yhtua.app/api/manifest",
-      "enabled": true,
-      "checkAutomatically": "ON_LAUNCH"
-    }
-  }
-}
-```
-
-Requires two endpoints: `GET /api/manifest` and `GET /assets/<hash>`. ~100 LOC server, or use community `expo-updates-server` reference implementation.
-
-### Apple OTA Rules
-
-OTA is allowed for bug fixes and minor changes. Feature additions via OTA are a grey area — go through App Store review for new features. For a 2FA app, OTA is most valuable for emergency TOTP calculation fixes where users could be locked out.
-
-## UniFFI Setup — Quick Reference
-
-### Rust Crate
-
-```toml
-[lib]
-crate-type = ["cdylib", "staticlib"]
-
-[dependencies]
-uniffi = "0.31"
-ring = "0.17"
-base64 = "0.22"
-rand = "0.8"
-thiserror = "2"
-
-[build-dependencies]
-uniffi = { version = "0.31", features = ["build"] }
-```
-
-```rust
-uniffi::setup_scaffolding!();
-
-#[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum CryptoError {
-    #[error("Encryption failed: {msg}")]
-    EncryptionFailed { msg: String },
-    #[error("Decryption failed: {msg}")]
-    DecryptionFailed { msg: String },
-    #[error("Invalid data format")]
-    InvalidFormat,
-}
-
-#[uniffi::export]
-pub fn encrypt_with_password(plaintext: String, password: String) -> Result<String, CryptoError> {
-    // existing logic
-}
-```
-
-### React Native Bindings
-
-Use `uniffi-bindgen-react-native` to generate Turbo Module bindings from the same crate.
-
-### Production References
-
-UniFFI is used in production by:
-- Mozilla Firefox (hundreds of millions of users) — sync encryption
-- Element/Matrix — full E2EE (matrix-sdk-crypto-ffi)
-- Zcash — wallet crypto operations
-
-## Decision Log
-
-| Decision | Choice | Rationale |
-|---|---|---|
-| Mobile framework | Expo (React Native) | Mature ecosystem, cloud iOS builds, batteries included |
-| Crypto sharing | UniFFI Rust crate | Reuse battle-tested `ring` crypto, proven at scale |
-| Desktop rewrite | No (keep Vue/Tauri) | Not worth rewriting 5 working screens for code sharing |
-| OTA updates | GitHub version check → self-hosted expo-updates if needed | Zero infra to start |
-| Build infrastructure | EAS free tier (iOS) + GitLab CI (Android) | $0 operational cost |
+- [Tauri prerequisites and mobile target setup](https://v2.tauri.app/start/prerequisites/)
+- [Tauri mobile plugin development](https://v2.tauri.app/develop/plugins/develop-mobile/)
+- [Expo SecureStore](https://docs.expo.dev/versions/latest/sdk/securestore/)
+- [Expo LocalAuthentication](https://docs.expo.dev/versions/latest/sdk/local-authentication/)
+- [Expo Clipboard](https://docs.expo.dev/versions/latest/sdk/clipboard/)
+- [Apple App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/)

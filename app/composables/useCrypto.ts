@@ -8,12 +8,16 @@ export const encryptWithPassword = (plaintext: string, password: string): Promis
 export const decryptWithPassword = (ciphertextBase64: string, password: string): Promise<string> =>
   invoke<string>('decrypt_with_password', { ciphertextBase64, password })
 
-// --- Sync credentials (keychain-backed with encrypted file fallback) ---
+// --- Sync credentials (OS credential store backed) ---
 
 export const storeSyncPassword = (password: string): Promise<void> =>
   invoke('store_sync_password', { password })
 
-export const getSyncPassword = (): Promise<string> => invoke<string>('get_sync_password')
+export const encryptWithSyncPassword = (plaintext: string): Promise<string> =>
+  invoke<string>('encrypt_with_sync_password', { plaintext })
+
+export const decryptWithSyncPassword = (ciphertextBase64: string): Promise<string> =>
+  invoke<string>('decrypt_with_sync_password', { ciphertextBase64 })
 
 export const hasSyncPassword = (): Promise<boolean> => invoke<boolean>('has_sync_password')
 
@@ -35,7 +39,7 @@ export const initializeEncryption = (): Promise<boolean> => ensureEncryptionKey(
 
 export const isEncryptionReady = (): Promise<boolean> => invoke<boolean>('has_encryption_key')
 
-export const hasEncryptionKey = (): Promise<boolean> => invoke<boolean>('has_encryption_key')
+export const resetEncryptionKey = (): Promise<void> => invoke('reset_encryption_key')
 
 // --- Encrypt / decrypt using keychain-stored key ---
 

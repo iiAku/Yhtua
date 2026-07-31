@@ -1,0 +1,19 @@
+[package]
+name = "yhtua-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+app-lib = { package = "yhtua", path = "..", features = ["fuzzing"] }
+libfuzzer-sys = "0.4.13"
+
+[[bin]]
+name = "local_ciphertext"
+path = "fuzz_targets/local_ciphertext.rs"
+test = false
+doc = false
+bench = false

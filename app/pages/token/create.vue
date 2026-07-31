@@ -1,11 +1,13 @@
 <template>
   <div class="bg-vault-base h-screen flex flex-col overflow-hidden">
     <!-- Import Password Modal -->
-    <div
+    <Dialog
       v-if="showImportPassword"
+      as="div"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      @close="cancelImportPassword"
     >
-      <div
+      <DialogPanel
         class="bg-vault-surface border border-vault-border rounded-2xl p-5 mx-4 max-w-sm w-full shadow-2xl shadow-black/30"
       >
         <div class="flex items-center gap-3 mb-4">
@@ -27,7 +29,9 @@
             </svg>
           </div>
           <div>
-            <h3 class="text-vault-text font-semibold text-sm">Encrypted Backup</h3>
+            <DialogTitle as="h3" class="text-vault-text font-semibold text-sm">
+              Encrypted Backup
+            </DialogTitle>
             <p class="text-vault-text-secondary text-xs">Enter password to decrypt</p>
           </div>
         </div>
@@ -37,6 +41,7 @@
             ref="importPasswordInput"
             v-model="importPassword"
             type="password"
+            aria-label="Backup password"
             placeholder="Backup password"
             class="w-full rounded-xl border-0 bg-vault-elevated px-3.5 py-2.5 text-vault-text text-sm ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-accent/40 placeholder:text-vault-text-muted transition-all"
             @keyup.enter="submitImportPassword"
@@ -58,8 +63,8 @@
             {{ importing ? 'Importing...' : 'Import' }}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogPanel>
+    </Dialog>
 
     <Navbar />
     <div class="flex-1 overflow-y-auto px-4 py-4">
@@ -88,16 +93,67 @@
       <div class="space-y-3">
         <input
           v-model="token.label"
+          aria-label="Token name"
           class="w-full rounded-xl border-0 bg-vault-elevated px-3.5 py-2.5 text-vault-text text-sm font-medium placeholder:text-vault-text-muted ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-accent/40 transition-all"
           placeholder="Token name (e.g. GitHub)"
         />
-        <input
-          v-model="token.secret"
-          @input="token.secret = token.secret.toUpperCase()"
-          class="w-full rounded-xl border-0 bg-vault-elevated px-3.5 py-2.5 text-vault-text text-sm font-mono placeholder:text-vault-text-muted ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-accent/40 transition-all"
-          placeholder="Secret key (e.g. JBSWY3DPEHPK3PXP)"
-        />
-        <TokenLength @digitSelected="setDigit" />
+        <div class="relative">
+          <input
+            v-model="token.secret"
+            :type="showSecret ? 'text' : 'password'"
+            aria-label="Base32 secret key"
+            autocomplete="off"
+            autocapitalize="characters"
+            :spellcheck="false"
+            @input="token.secret = token.secret.toUpperCase()"
+            class="w-full rounded-xl border-0 bg-vault-elevated px-3.5 py-2.5 pr-10 text-vault-text text-sm font-mono placeholder:text-vault-text-muted ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-accent/40 transition-all"
+            placeholder="Secret key (e.g. JBSWY3DPEHPK3PXP)"
+          />
+          <button
+            type="button"
+            class="absolute inset-y-0 right-0 flex items-center pr-3 text-vault-text-muted hover:text-vault-text-secondary transition-colors"
+            :aria-label="showSecret ? 'Hide secret' : 'Show secret'"
+            :aria-pressed="showSecret"
+            @click="showSecret = !showSecret"
+          >
+            <svg
+              v-if="showSecret"
+              class="h-4.5 w-4.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88"
+              />
+            </svg>
+            <svg
+              v-else
+              class="h-4.5 w-4.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+              />
+            </svg>
+          </button>
+        </div>
+        <TokenLength v-model="token.digits" />
         <button
           type="submit"
           class="w-full rounded-xl bg-vault-accent px-3.5 py-2.5 text-sm font-semibold text-vault-base hover:bg-vault-accent-hover transition-colors"
@@ -129,6 +185,7 @@
 </template>
 
 <script setup lang="ts">
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/vue'
 import {
   completePendingEncryptedImport,
   clearPendingEncryptedImport,
@@ -140,6 +197,7 @@ const token = reactive({
   secret: '',
   digits: DEFAULT_DIGITS,
 })
+const showSecret = ref(false)
 
 const notification = useNotification()
 
@@ -172,6 +230,8 @@ const submitImportPassword = async () => {
       delay: 1500,
     })
     navigateTo('/')
+  } else if (result.cancelled) {
+    cancelImportPassword()
   } else {
     await useShowNotification(notification, {
       text: result.error ?? 'Import failed',
@@ -186,7 +246,11 @@ const cancelImportPassword = () => {
   clearPendingEncryptedImport()
 }
 
-const setDigit = (newDigit: number) => (token.digits = newDigit)
+onBeforeUnmount(() => {
+  token.secret = ''
+  importPassword.value = ''
+  clearPendingEncryptedImport()
+})
 
 const addToken = async ({
   secret,
@@ -201,15 +265,7 @@ const addToken = async ({
 
   if (validParams.success === false) {
     return useShowNotification(notification, {
-      text: validParams.error.errors[0].message,
-      type: NotificationType.Danger,
-    })
-  }
-
-  const duplicate = isDuplicateLabel(validParams.data.label)
-  if (duplicate) {
-    return useShowNotification(notification, {
-      text: `A token named "${duplicate.otp.label}" already exists`,
+      text: validParams.error.issues[0]?.message ?? 'Invalid token',
       type: NotificationType.Danger,
     })
   }

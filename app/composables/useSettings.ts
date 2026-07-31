@@ -1,7 +1,6 @@
-import { downloadDir, join } from '@tauri-apps/api/path'
-import { open, save } from '@tauri-apps/plugin-dialog'
-import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import { invoke } from '@tauri-apps/api/core'
 import { z } from 'zod'
+import { MAX_ENCRYPTED_BACKUP_BYTES } from './useStore'
 import {
   decryptSecret,
   decryptWithPassword,
@@ -10,57 +9,69 @@ import {
   initializeEncryption,
 } from './useCrypto'
 
-const encryptedExportSchema = z.object({
-  version: z.string(),
-  encrypted: z.literal(true),
-  data: z.string(),
-})
+const encryptedExportSchema = z
+  .object({
+    version: z.enum(['2.0.0', '2.1.0', '2.2.0', '2.3.0']),
+    encrypted: z.literal(true),
+    syncedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+    data: z.string().min(1).max(MAX_ENCRYPTED_BACKUP_BYTES),
+  })
+  .strict()
 
 const parseAndValidate = <T extends z.ZodType>(
   jsonString: string,
   schema: T,
-): z.SafeParseReturnType<unknown, z.infer<T>> => {
+  maxBytes?: number,
+) => {
   try {
-    const parsed = JSON.parse(jsonString)
+    const parsed = parseBoundedJson(jsonString, maxBytes)
     return schema.safeParse(parsed)
-  } catch (err) {
-    return {
-      success: false,
-      error: new z.ZodError([
-        {
-          code: 'custom',
-          path: [],
-          message: err instanceof Error ? err.message : 'Invalid JSON',
-        },
-      ]),
-    } as z.SafeParseReturnType<unknown, z.infer<T>>
+  } catch {
+    return schema.safeParse(undefined)
   }
 }
 
-let pendingEncryptedData: string | null = null
+const pickBackupFile = (): Promise<string | null> => invoke<string | null>('pick_backup_file')
 
-export const hasPendingEncryptedImport = (): boolean => pendingEncryptedData !== null
+const saveBackupFile = (content: string): Promise<boolean> =>
+  invoke<boolean>('save_backup_file', { content })
+
+type EncryptedExport = z.infer<typeof encryptedExportSchema>
+
+let pendingEncryptedBackup: EncryptedExport | null = null
+
+export const hasPendingEncryptedImport = (): boolean => pendingEncryptedBackup !== null
 
 export const clearPendingEncryptedImport = (): void => {
-  pendingEncryptedData = null
+  pendingEncryptedBackup = null
 }
 
 export const completePendingEncryptedImport = async (
   password: string,
-): Promise<{ success: boolean; error?: string; tokensCount?: number }> => {
-  if (!pendingEncryptedData) return { success: false, error: 'No pending import' }
+): Promise<{ success: boolean; cancelled?: boolean; error?: string; tokensCount?: number }> => {
+  const pending = pendingEncryptedBackup
+  if (!pending) return { success: false, error: 'No pending import' }
 
   let decryptedData: unknown
   try {
-    const decryptedJson = await decryptWithPassword(pendingEncryptedData, password)
-    decryptedData = JSON.parse(decryptedJson)
+    const decryptedJson = await decryptWithPassword(pending.data, password)
+    decryptedData = parseBoundedJson(decryptedJson)
   } catch {
     return { success: false, error: 'Wrong password or corrupted file' }
   }
 
-  const validationResult = exportImportSchema.safeParse(decryptedData)
-  if (!validationResult.success) {
+  const validationResult = plaintextBackupSchema.safeParse(decryptedData)
+  if (!validationResult.success || !portableBackupMetadataMatches(pending, validationResult.data)) {
     return { success: false, error: 'Invalid backup data structure' }
+  }
+
+  const tokenCount = validationResult.data.tokens.length
+  const existingCount = getTokens().length
+  if (
+    existingCount > 0 &&
+    !confirm(`Import ${tokenCount} tokens? You currently have ${existingCount} tokens.`)
+  ) {
+    return { success: false, cancelled: true }
   }
 
   try {
@@ -77,10 +88,10 @@ export const completePendingEncryptedImport = async (
       })),
     )
 
-    storeAddToken(reEncryptedTokens)
-    pendingEncryptedData = null
+    const importedCount = storeAddToken(reEncryptedTokens)
+    if (pendingEncryptedBackup === pending) pendingEncryptedBackup = null
 
-    return { success: true, tokensCount: reEncryptedTokens.length }
+    return { success: true, tokensCount: importedCount }
   } catch (error) {
     return {
       success: false,
@@ -101,17 +112,6 @@ export const exportTokensEncrypted = async (
   password: string,
 ): Promise<boolean> => {
   try {
-    const filename = 'yhtua_backup.json'
-    const downloadPath = await downloadDir()
-
-    const saveFilePath = await save({
-      defaultPath: await join(downloadPath, filename),
-    })
-
-    if (saveFilePath === null) {
-      return false
-    }
-
     const tokens = getTokens()
     const decryptedTokens = await Promise.all(
       tokens.map(async (token) => ({
@@ -125,20 +125,23 @@ export const exportTokensEncrypted = async (
     )
 
     const backupData = {
-      version: '2.1.0',
+      version: '2.3.0',
       encrypted: false,
       tokens: decryptedTokens,
+      tombstones: getTombstones(),
     }
 
     const encryptedData = await encryptWithPassword(JSON.stringify(backupData), password)
 
     const encryptedBackup = {
-      version: '2.1.0',
+      version: '2.3.0',
       encrypted: true,
       data: encryptedData,
     }
 
-    await writeTextFile(saveFilePath, JSON.stringify(encryptedBackup))
+    if (!(await saveBackupFile(JSON.stringify(encryptedBackup, null, 2)))) {
+      return false
+    }
     await useShowNotification(notification, {
       text: 'Tokens exported with encryption',
       delay: 1500,
@@ -161,31 +164,27 @@ export const importTokensEncrypted = async (
   navigateToHome?: boolean,
 ): Promise<boolean> => {
   try {
-    const jsonPath = await open({
-      multiple: false,
-      filters: [
-        {
-          name: 'json',
-          extensions: ['json'],
-        },
-      ],
-    })
-
-    if (jsonPath === null) {
+    const jsonContent = await pickBackupFile()
+    if (jsonContent === null) {
       return false
     }
 
-    const jsonContent = await readTextFile(jsonPath)
-
-    const encryptedResult = parseAndValidate(jsonContent, encryptedExportSchema)
+    const encryptedResult = parseAndValidate(
+      jsonContent,
+      encryptedExportSchema,
+      MAX_ENCRYPTED_BACKUP_BYTES,
+    )
 
     if (encryptedResult.success) {
       try {
         const decryptedJson = await decryptWithPassword(encryptedResult.data.data, password)
-        const decryptedData = JSON.parse(decryptedJson)
+        const decryptedData = parseBoundedJson(decryptedJson)
 
-        const validationResult = exportImportSchema.safeParse(decryptedData)
-        if (!validationResult.success) {
+        const validationResult = plaintextBackupSchema.safeParse(decryptedData)
+        if (
+          !validationResult.success ||
+          !portableBackupMetadataMatches(encryptedResult.data, validationResult.data)
+        ) {
           await useShowNotification(notification, {
             text: 'Invalid backup data structure',
             delay: 2000,
@@ -216,10 +215,10 @@ export const importTokensEncrypted = async (
           })),
         )
 
-        storeAddToken(reEncryptedTokens)
+        const importedCount = storeAddToken(reEncryptedTokens)
 
         await useShowNotification(notification, {
-          text: `${reEncryptedTokens.length} tokens imported`,
+          text: `${importedCount} tokens imported`,
           delay: 1500,
         })
 
@@ -237,7 +236,7 @@ export const importTokensEncrypted = async (
       }
     }
 
-    const legacyResult = parseAndValidate(jsonContent, exportImportSchema)
+    const legacyResult = parseAndValidate(jsonContent, plaintextBackupSchema)
 
     if (legacyResult.success) {
       const tokenCount = legacyResult.data.tokens.length
@@ -256,16 +255,16 @@ export const importTokensEncrypted = async (
           ...token,
           otp: {
             ...token.otp,
-            secret: token.otp.encrypted ? token.otp.secret : await encryptSecret(token.otp.secret),
+            secret: await encryptSecret(token.otp.secret),
             encrypted: true,
           },
         })),
       )
 
-      storeAddToken(reEncryptedTokens)
+      const importedCount = storeAddToken(reEncryptedTokens)
 
       await useShowNotification(notification, {
-        text: `${reEncryptedTokens.length} tokens imported (legacy format)`,
+        text: `${importedCount} tokens imported (legacy format)`,
         delay: 1500,
       })
 
@@ -293,78 +292,29 @@ export const importTokensEncrypted = async (
   }
 }
 
-export const exportTokens = async (notification: Ref<AppNotification>) => {
-  try {
-    const filename = 'yhtua_export_token.json'
-    const downloadPath = await downloadDir()
-
-    const saveFilePath = await save({
-      defaultPath: await join(downloadPath, filename),
-    })
-
-    if (saveFilePath === null) {
-      return
-    }
-
-    const tokens = getTokens()
-    const decryptedTokens = await Promise.all(
-      tokens.map(async (token) => ({
-        ...token,
-        otp: {
-          ...token.otp,
-          secret: await getPlaintextSecret(token),
-          encrypted: false,
-        },
-      })),
-    )
-
-    const backup = {
-      version: '2.0.0',
-      tokens: decryptedTokens,
-    }
-
-    await writeTextFile(saveFilePath, JSON.stringify(backup))
-    await useShowNotification(notification, {
-      text: 'Tokens exported (unencrypted)',
-      delay: 1500,
-    })
-  } catch (error) {
-    await useShowNotification(notification, {
-      text: 'Error while exporting tokens',
-      delay: 1500,
-      type: NotificationType.Danger,
-    })
-  }
-}
-
 export const importTokens = async (
   notification: Ref<AppNotification>,
   navigateToHome?: boolean,
 ) => {
   try {
-    const jsonPath = await open({
-      multiple: false,
-      filters: [
-        {
-          name: 'json',
-          extensions: ['json'],
-        },
-      ],
-    })
-    if (jsonPath === null) {
+    const jsonContent = await pickBackupFile()
+    if (jsonContent === null) {
       return
     }
-    const jsonContent = await readTextFile(jsonPath)
 
     // Detect encrypted backup (sync or export) — return for caller to handle password
-    const encryptedResult = parseAndValidate(jsonContent, encryptedExportSchema)
+    const encryptedResult = parseAndValidate(
+      jsonContent,
+      encryptedExportSchema,
+      MAX_ENCRYPTED_BACKUP_BYTES,
+    )
     if (encryptedResult.success) {
-      pendingEncryptedData = encryptedResult.data.data
+      pendingEncryptedBackup = encryptedResult.data
       return
     }
 
     // Unencrypted backup
-    const result = parseAndValidate(jsonContent, exportImportSchema)
+    const result = parseAndValidate(jsonContent, plaintextBackupSchema)
 
     if (!result.success) {
       console.error('Import validation error:', result.error.issues)
@@ -390,9 +340,7 @@ export const importTokens = async (
     const reEncryptedTokens = await Promise.all(
       result.data.tokens.map(async (token: Token) => {
         try {
-          const encryptedSecret = token.otp.encrypted
-            ? token.otp.secret
-            : await encryptSecret(token.otp.secret)
+          const encryptedSecret = await encryptSecret(token.otp.secret)
           return {
             ...token,
             otp: {
@@ -408,10 +356,10 @@ export const importTokens = async (
       }),
     )
 
-    storeAddToken(reEncryptedTokens)
+    const importedCount = storeAddToken(reEncryptedTokens)
 
     await useShowNotification(notification, {
-      text: `${reEncryptedTokens.length} tokens imported`,
+      text: `${importedCount} tokens imported`,
       delay: 1500,
     })
     if (navigateToHome) {
@@ -429,12 +377,12 @@ export const importTokens = async (
 
 export const removeAllTokens = async (notification: Ref<AppNotification>) => {
   try {
-    store.setState(defaultStore())
+    storeDeleteAllTokens()
     await useShowNotification(notification, {
       text: 'All tokens removed',
       delay: 1500,
     })
-  } catch (error) {
+  } catch {
     await useShowNotification(notification, {
       text: 'Error while removing tokens',
       delay: 1500,

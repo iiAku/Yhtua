@@ -10,8 +10,7 @@
         v-slot="{ checked }"
       >
         <div
-          @click="$emit('digitSelected', option.type)"
-          class="cursor-pointer focus:outline-none"
+          class="cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vault-accent"
           :class="[
             checked
               ? 'bg-vault-accent text-vault-base ring-vault-accent font-semibold'
@@ -28,11 +27,13 @@
 
 <script setup lang="ts">
 import { RadioGroup, RadioGroupLabel, RadioGroupOption } from '@headlessui/vue'
-import { ref } from 'vue'
+import { computed } from 'vue'
 
-defineEmits<{
-  digitSelected: [digit: number]
+const emit = defineEmits<{
+  'update:modelValue': [digit: number]
 }>()
+
+const props = withDefaults(defineProps<{ modelValue?: number }>(), { modelValue: 6 })
 
 const digits = [
   { name: '6-digit', type: 6 },
@@ -40,5 +41,10 @@ const digits = [
   { name: '8-digit', type: 8 },
 ]
 
-const digitModel = ref(digits[0])
+const digitModel = computed({
+  get: () => digits.find(({ type }) => type === props.modelValue) ?? digits[0],
+  set: (option) => {
+    if (option) emit('update:modelValue', option.type)
+  },
+})
 </script>

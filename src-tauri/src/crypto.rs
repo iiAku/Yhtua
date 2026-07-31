@@ -1,38 +1,62 @@
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use keyring::Entry;
-use rand::RngCore;
+use argon2::{Algorithm, Argon2, Params, Version};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use keyring::{Entry, Error as KeyringError};
 use ring::{
-    aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN},
+    aead::{AES_256_GCM, Aad, LessSafeKey, NONCE_LEN, Nonce, UnboundKey},
     pbkdf2,
+    rand::{SecureRandom, SystemRandom},
 };
-use std::fs;
-use std::num::NonZeroU32;
-use std::path::PathBuf;
+use std::{
+    fs,
+    num::NonZeroU32,
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-const KEYCHAIN_SERVICE: &str = "yhtua";
+const KEYCHAIN_SERVICE: &str = "com.yhtua.dev";
 const KEYCHAIN_KEY_NAME: &str = "encryption-key";
 const KEYCHAIN_SYNC_PASSWORD: &str = "sync-password";
 const KEYCHAIN_SYNC_PATH: &str = "sync-path";
-const PBKDF2_ITERATIONS: u32 = 600_000;
+
+const LEGACY_KEYCHAIN_SERVICE: &str = "yhtua";
+const LEGACY_PBKDF2_ITERATIONS: u32 = 600_000;
 const SALT_LEN: usize = 16;
 const KEY_LEN: usize = 32;
+const TAG_LEN: usize = 16;
+const PASSWORD_FORMAT_MAGIC: &[u8; 4] = b"YHP2";
+const LOCAL_FORMAT_MAGIC: &[u8; 4] = b"YHL2";
+const PASSWORD_AAD: &[u8] = b"yhtua-password-backup-v2";
+const LOCAL_AAD: &[u8] = b"yhtua-local-secret-v2";
+const ARGON2_MEMORY_KIB: u32 = 64 * 1024;
+const ARGON2_ITERATIONS: u32 = 3;
+const ARGON2_PARALLELISM: u32 = 1;
+const MAX_SECRET_BYTES: usize = 4 * 1024;
+const MAX_BACKUP_BYTES: usize = 16 * 1024 * 1024;
+const MAX_CIPHERTEXT_BASE64_BYTES: usize = 24 * 1024 * 1024;
+const MAX_PASSWORD_BYTES: usize = 1024;
 
-const FALLBACK_DIR: &str = ".yhtua";
-const FALLBACK_CREDS_FILE: &str = "credentials.enc";
+const LEGACY_FALLBACK_DIR: &str = ".yhtua";
+const LEGACY_FALLBACK_CREDS_FILE: &str = "credentials.enc";
 
 #[derive(Error, Debug)]
 pub enum CryptoError {
-    #[error("Keychain error: {0}")]
-    Keychain(String),
-    #[error("Encryption error: {0}")]
-    Encryption(String),
-    #[error("Decryption error: {0}")]
-    Decryption(String),
+    #[error("Secure credential storage is unavailable")]
+    Keychain,
+    #[error("Encryption key is missing")]
+    MissingEncryptionKey,
+    #[error("Encryption failed")]
+    Encryption,
+    #[error("Decryption failed")]
+    Decryption,
     #[error("Invalid data format")]
     InvalidFormat,
-    #[error("Storage error: {0}")]
-    Storage(String),
+    #[error("Input exceeds the allowed size")]
+    InputTooLarge,
+    #[error("Password must contain between 8 and 1024 bytes")]
+    InvalidPassword,
+    #[error("Storage operation failed")]
+    Storage,
 }
 
 impl serde::Serialize for CryptoError {
@@ -44,342 +68,532 @@ impl serde::Serialize for CryptoError {
     }
 }
 
-fn get_fallback_path() -> Result<PathBuf, CryptoError> {
-    let home = dirs::data_local_dir()
-        .or_else(dirs::home_dir)
-        .ok_or_else(|| CryptoError::Storage("Cannot find home directory".into()))?;
-    Ok(home.join(FALLBACK_DIR))
-}
-
-fn get_credentials_file_path() -> Result<PathBuf, CryptoError> {
-    Ok(get_fallback_path()?.join(FALLBACK_CREDS_FILE))
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Default)]
-struct FallbackCredentials {
+#[derive(serde::Serialize, serde::Deserialize, Default, Zeroize, ZeroizeOnDrop)]
+#[serde(deny_unknown_fields)]
+struct LegacyFallbackCredentials {
     encryption_key: Option<String>,
     sync_password: Option<String>,
     sync_path: Option<String>,
 }
 
-fn get_fallback_encryption_key() -> [u8; KEY_LEN] {
-    let username = whoami::username();
-    let hostname = whoami::fallible::hostname().unwrap_or_else(|_| "unknown".to_string());
-    let device_id = format!("yhtua-fallback-{}-{}", username, hostname);
+fn legacy_fallback_path() -> Result<PathBuf, CryptoError> {
+    let data_dir = dirs::data_local_dir()
+        .or_else(dirs::home_dir)
+        .ok_or(CryptoError::Storage)?;
+    Ok(data_dir
+        .join(LEGACY_FALLBACK_DIR)
+        .join(LEGACY_FALLBACK_CREDS_FILE))
+}
 
-    let salt = b"yhtua-fallback-salt-v1";
-    let mut key = [0u8; KEY_LEN];
+fn derive_legacy_key(password: &[u8], salt: &[u8], iterations: u32) -> [u8; KEY_LEN] {
+    let mut key = [0_u8; KEY_LEN];
+    let iterations = NonZeroU32::new(iterations).expect("iteration count is a non-zero constant");
     pbkdf2::derive(
         pbkdf2::PBKDF2_HMAC_SHA256,
-        NonZeroU32::new(PBKDF2_ITERATIONS).unwrap(),
+        iterations,
         salt,
-        device_id.as_bytes(),
+        password,
         &mut key,
     );
     key
 }
 
-fn read_fallback_credentials() -> FallbackCredentials {
-    let path = match get_credentials_file_path() {
-        Ok(p) => p,
-        Err(e) => {
-            log::error!("Failed to resolve credentials file path: {}", e);
-            return FallbackCredentials::default();
-        }
-    };
+fn legacy_fallback_encryption_key() -> Zeroizing<[u8; KEY_LEN]> {
+    let username = whoami::username().unwrap_or_else(|_| "unknown".to_owned());
+    let hostname = whoami::hostname().unwrap_or_else(|_| "unknown".to_owned());
+    let device_id = Zeroizing::new(format!("yhtua-fallback-{username}-{hostname}"));
+    Zeroizing::new(derive_legacy_key(
+        device_id.as_bytes(),
+        b"yhtua-fallback-salt-v1",
+        LEGACY_PBKDF2_ITERATIONS,
+    ))
+}
 
-    log::debug!("Reading fallback credentials from: {:?}", path);
-
+fn read_legacy_fallback_credentials() -> Result<Option<LegacyFallbackCredentials>, CryptoError> {
+    let path = legacy_fallback_path()?;
     if !path.exists() {
-        log::debug!("Fallback credentials file does not exist yet");
-        return FallbackCredentials::default();
+        return Ok(None);
     }
 
-    match fs::read_to_string(&path) {
-        Ok(encrypted_content) => {
-            let key = get_fallback_encryption_key();
-            match decrypt_aes256gcm(&encrypted_content, &key) {
-                Ok(decrypted) => match serde_json::from_str(&decrypted) {
-                    Ok(creds) => creds,
-                    Err(e) => {
-                        log::error!("Failed to parse fallback credentials JSON: {}", e);
-                        FallbackCredentials::default()
-                    }
-                },
-                Err(e) => {
-                    log::error!("Failed to decrypt fallback credentials: {}", e);
-                    FallbackCredentials::default()
-                }
+    let metadata = fs::symlink_metadata(&path).map_err(|_| CryptoError::Storage)?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(CryptoError::Storage);
+    }
+
+    let encrypted = fs::read_to_string(&path).map_err(|_| CryptoError::Storage)?;
+    if encrypted.len() > MAX_CIPHERTEXT_BASE64_BYTES {
+        return Err(CryptoError::InputTooLarge);
+    }
+    let key = legacy_fallback_encryption_key();
+    let decrypted = Zeroizing::new(decrypt_local_legacy(&encrypted, key.as_ref())?);
+    let credentials = serde_json::from_str(&decrypted).map_err(|_| CryptoError::InvalidFormat)?;
+    Ok(Some(credentials))
+}
+
+fn keyring_entry(service: &str, name: &str) -> Result<Entry, CryptoError> {
+    Entry::new(service, name).map_err(|error| {
+        log::warn!("Unable to create an OS credential entry: {error}");
+        CryptoError::Keychain
+    })
+}
+
+trait CredentialBackend {
+    fn get(&self, service: &str, name: &str) -> Result<Option<Zeroizing<String>>, CryptoError>;
+    fn set(&self, service: &str, name: &str, value: &str) -> Result<(), CryptoError>;
+    fn delete(&self, service: &str, name: &str) -> Result<(), CryptoError>;
+}
+
+struct OsCredentialBackend;
+
+impl CredentialBackend for OsCredentialBackend {
+    fn get(&self, service: &str, name: &str) -> Result<Option<Zeroizing<String>>, CryptoError> {
+        match keyring_entry(service, name)?.get_password() {
+            Ok(value) => Ok(Some(Zeroizing::new(value))),
+            Err(KeyringError::NoEntry) => Ok(None),
+            Err(error) => {
+                log::warn!("Unable to read an OS credential: {error}");
+                Err(CryptoError::Keychain)
             }
         }
-        Err(e) => {
-            log::error!("Failed to read fallback credentials file: {}", e);
-            FallbackCredentials::default()
+    }
+
+    fn set(&self, service: &str, name: &str, value: &str) -> Result<(), CryptoError> {
+        let entry = keyring_entry(service, name)?;
+        entry.set_password(value).map_err(|error| {
+            log::warn!("Unable to write an OS credential: {error}");
+            CryptoError::Keychain
+        })?;
+        let stored = Zeroizing::new(entry.get_password().map_err(|error| {
+            log::warn!("Unable to verify an OS credential: {error}");
+            CryptoError::Keychain
+        })?);
+        if stored.as_str() != value {
+            return Err(CryptoError::Keychain);
+        }
+        Ok(())
+    }
+
+    fn delete(&self, service: &str, name: &str) -> Result<(), CryptoError> {
+        match keyring_entry(service, name)?.delete_credential() {
+            Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
+            Err(error) => {
+                log::warn!("Unable to delete an OS credential: {error}");
+                Err(CryptoError::Keychain)
+            }
         }
     }
 }
 
-fn write_fallback_credentials(creds: &FallbackCredentials) -> Result<(), CryptoError> {
-    let dir = get_fallback_path()?;
-    if !dir.exists() {
-        fs::create_dir_all(&dir)
-            .map_err(|e| CryptoError::Storage(format!("Cannot create directory: {}", e)))?;
-    }
-
-    let path = get_credentials_file_path()?;
-    let json = serde_json::to_string(creds)
-        .map_err(|e| CryptoError::Storage(format!("Cannot serialize: {}", e)))?;
-
-    let key = get_fallback_encryption_key();
-    let encrypted = encrypt_aes256gcm(&json, &key)?;
-
-    fs::write(&path, encrypted)
-        .map_err(|e| CryptoError::Storage(format!("Cannot write file: {}", e)))?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
-    }
-
-    #[cfg(windows)]
-    {
-        // Mark file as hidden on Windows for additional protection
-        // The file is already in AppData\Local which has user-only access by default
-        let _ = std::process::Command::new("attrib")
-            .args(["+H", path.to_str().unwrap_or("")])
-            .output();
-    }
-
-    Ok(())
-}
-
-fn get_keyring_entry(name: &str) -> Result<Entry, CryptoError> {
-    Entry::new(KEYCHAIN_SERVICE, name).map_err(|e| CryptoError::Keychain(e.to_string()))
-}
-
-fn get_credential(name: &str) -> Option<String> {
-    match get_keyring_entry(name) {
-        Ok(entry) => match entry.get_password() {
-            Ok(value) => return Some(value),
-            Err(e) => log::warn!("Keyring get_password failed for '{}': {}", name, e),
-        },
-        Err(e) => log::warn!("Keyring entry creation failed for '{}': {}", name, e),
-    }
-
-    log::info!("Trying fallback credentials for '{}'", name);
-    let creds = read_fallback_credentials();
-    let result = match name {
-        KEYCHAIN_KEY_NAME => creds.encryption_key,
-        KEYCHAIN_SYNC_PASSWORD => creds.sync_password,
-        KEYCHAIN_SYNC_PATH => creds.sync_path,
-        _ => None,
+fn migrate_legacy_credentials<B: CredentialBackend>(backend: &B) -> Result<bool, CryptoError> {
+    let Some(credentials) = read_legacy_fallback_credentials()? else {
+        return Ok(false);
     };
 
-    if result.is_none() {
-        log::warn!("Fallback credentials also missing for '{}'", name);
+    for (name, value) in [
+        (KEYCHAIN_KEY_NAME, credentials.encryption_key.as_deref()),
+        (KEYCHAIN_SYNC_PASSWORD, credentials.sync_password.as_deref()),
+        (KEYCHAIN_SYNC_PATH, credentials.sync_path.as_deref()),
+    ] {
+        if let Some(value) = value {
+            validate_legacy_credential_value(name, value)?;
+        }
     }
-    result
+
+    let mut migrated_any = false;
+    for (name, value) in [
+        (KEYCHAIN_KEY_NAME, credentials.encryption_key.as_deref()),
+        (KEYCHAIN_SYNC_PASSWORD, credentials.sync_password.as_deref()),
+        (KEYCHAIN_SYNC_PATH, credentials.sync_path.as_deref()),
+    ] {
+        if let Some(value) = value {
+            if backend.get(KEYCHAIN_SERVICE, name)?.is_none() {
+                backend.set(KEYCHAIN_SERVICE, name, value)?;
+            }
+            migrated_any = true;
+        }
+    }
+
+    if migrated_any {
+        let path = legacy_fallback_path()?;
+        fs::remove_file(path).map_err(|_| CryptoError::Storage)?;
+        log::info!("Migrated legacy credentials into the OS credential store");
+    }
+    Ok(migrated_any)
+}
+
+fn get_credential_with<B: CredentialBackend>(
+    backend: &B,
+    name: &str,
+) -> Result<Option<Zeroizing<String>>, CryptoError> {
+    if let Some(value) = backend.get(KEYCHAIN_SERVICE, name)? {
+        return Ok(Some(value));
+    }
+
+    // Releases before 2.7 used a different service identifier on some platforms.
+    if let Some(value) = backend.get(LEGACY_KEYCHAIN_SERVICE, name)? {
+        validate_legacy_credential_value(name, &value)?;
+        backend.set(KEYCHAIN_SERVICE, name, &value)?;
+        backend.delete(LEGACY_KEYCHAIN_SERVICE, name)?;
+        return Ok(Some(value));
+    }
+
+    if migrate_legacy_credentials(backend)?
+        && let Some(value) = backend.get(KEYCHAIN_SERVICE, name)?
+    {
+        return Ok(Some(value));
+    }
+    Ok(None)
+}
+
+fn get_credential(name: &str) -> Result<Option<Zeroizing<String>>, CryptoError> {
+    get_credential_with(&OsCredentialBackend, name)
 }
 
 fn store_credential(name: &str, value: &str) -> Result<(), CryptoError> {
-    log::info!("Storing credential '{}'", name);
+    OsCredentialBackend.set(KEYCHAIN_SERVICE, name, value)
+}
 
-    // Always write to fallback first for redundancy
-    let mut creds = read_fallback_credentials();
-    match name {
-        KEYCHAIN_KEY_NAME => creds.encryption_key = Some(value.to_string()),
-        KEYCHAIN_SYNC_PASSWORD => creds.sync_password = Some(value.to_string()),
-        KEYCHAIN_SYNC_PATH => creds.sync_path = Some(value.to_string()),
-        _ => {}
+fn store_credential_if_missing_with<B: CredentialBackend>(
+    backend: &B,
+    name: &str,
+    value: &str,
+) -> Result<(), CryptoError> {
+    if get_credential_with(backend, name)?.is_none() {
+        backend.set(KEYCHAIN_SERVICE, name, value)?;
     }
-
-    if let Err(e) = write_fallback_credentials(&creds) {
-        log::error!("Fallback credentials write FAILED for '{}': {}", name, e);
-        return Err(e);
-    }
-    log::info!("Fallback credentials written successfully for '{}'", name);
-
-    // Verify fallback is readable
-    let verify = read_fallback_credentials();
-    let verified = match name {
-        KEYCHAIN_KEY_NAME => verify.encryption_key.is_some(),
-        KEYCHAIN_SYNC_PASSWORD => verify.sync_password.is_some(),
-        KEYCHAIN_SYNC_PATH => verify.sync_path.is_some(),
-        _ => false,
-    };
-    if verified {
-        log::info!("Fallback credential '{}' verified readable", name);
-    } else {
-        log::error!("Fallback credential '{}' written but NOT readable — file round-trip broken", name);
-    }
-
-    // Also try to store in keychain (best effort)
-    let keyring_result = get_keyring_entry(name).and_then(|entry| {
-        entry
-            .set_password(value)
-            .map_err(|e| CryptoError::Keychain(e.to_string()))
-    });
-
-    if keyring_result.is_err() {
-        log::warn!(
-            "Keyring storage failed, using file fallback only: {:?}",
-            keyring_result.err()
-        );
-    }
-
     Ok(())
 }
 
-fn has_credential(name: &str) -> bool {
-    get_credential(name).is_some()
+fn has_credential(name: &str) -> Result<bool, CryptoError> {
+    Ok(get_credential(name)?.is_some())
 }
 
 fn delete_credential(name: &str) -> Result<(), CryptoError> {
-    if let Ok(entry) = get_keyring_entry(name) {
-        let _ = entry.delete_credential();
+    for service in [KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE] {
+        OsCredentialBackend.delete(service, name)?;
     }
+    Ok(())
+}
 
-    let mut creds = read_fallback_credentials();
+fn rotate_encryption_key_with<B: CredentialBackend>(
+    backend: &B,
+    encoded: &str,
+) -> Result<(), CryptoError> {
+    let _ = decode_key(encoded)?;
+    // A verified overwrite avoids the recovery gap created by delete-then-create.
+    backend.set(KEYCHAIN_SERVICE, KEYCHAIN_KEY_NAME, encoded)?;
+    // The stable entry now takes precedence. Failure to remove a stale legacy copy
+    // must not make the UI retain token ciphertext encrypted by the previous key.
+    if backend
+        .delete(LEGACY_KEYCHAIN_SERVICE, KEYCHAIN_KEY_NAME)
+        .is_err()
+    {
+        log::warn!("Unable to remove the legacy encryption-key entry after rotation");
+    }
+    Ok(())
+}
+
+fn random_bytes<const N: usize>() -> Result<[u8; N], CryptoError> {
+    let mut bytes = [0_u8; N];
+    SystemRandom::new()
+        .fill(&mut bytes)
+        .map_err(|_| CryptoError::Encryption)?;
+    Ok(bytes)
+}
+
+fn decode_key(key_base64: &str) -> Result<Zeroizing<[u8; KEY_LEN]>, CryptoError> {
+    let decoded = Zeroizing::new(
+        BASE64
+            .decode(key_base64)
+            .map_err(|_| CryptoError::InvalidFormat)?,
+    );
+    let key: [u8; KEY_LEN] = decoded
+        .as_slice()
+        .try_into()
+        .map_err(|_| CryptoError::InvalidFormat)?;
+    Ok(Zeroizing::new(key))
+}
+
+fn validate_legacy_credential_value(name: &str, value: &str) -> Result<(), CryptoError> {
     match name {
-        KEYCHAIN_KEY_NAME => creds.encryption_key = None,
-        KEYCHAIN_SYNC_PASSWORD => creds.sync_password = None,
-        KEYCHAIN_SYNC_PATH => creds.sync_path = None,
-        _ => {}
+        KEYCHAIN_KEY_NAME => {
+            let _ = decode_key(value)?;
+            Ok(())
+        }
+        KEYCHAIN_SYNC_PASSWORD => {
+            if value.is_empty() || value.len() > MAX_PASSWORD_BYTES {
+                Err(CryptoError::InvalidPassword)
+            } else {
+                Ok(())
+            }
+        }
+        KEYCHAIN_SYNC_PATH => validate_sync_path(value),
+        _ => Err(CryptoError::InvalidFormat),
     }
-    write_fallback_credentials(&creds)
 }
 
-fn generate_random_bytes(len: usize) -> Vec<u8> {
-    let mut bytes = vec![0u8; len];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    bytes
+fn seal(
+    plaintext: &[u8],
+    key: &[u8],
+    nonce_bytes: [u8; NONCE_LEN],
+    aad: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|_| CryptoError::Encryption)?;
+    let key = LessSafeKey::new(unbound);
+    let nonce = Nonce::assume_unique_for_key(nonce_bytes);
+    let mut output = plaintext.to_vec();
+    key.seal_in_place_append_tag(nonce, Aad::from(aad), &mut output)
+        .map_err(|_| CryptoError::Encryption)?;
+    Ok(output)
+}
+
+fn open(
+    ciphertext: &[u8],
+    key: &[u8],
+    nonce_bytes: [u8; NONCE_LEN],
+    aad: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
+    let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|_| CryptoError::Decryption)?;
+    let key = LessSafeKey::new(unbound);
+    let nonce = Nonce::assume_unique_for_key(nonce_bytes);
+    let mut output = Zeroizing::new(ciphertext.to_vec());
+    let plaintext_len = key
+        .open_in_place(nonce, Aad::from(aad), output.as_mut())
+        .map_err(|_| CryptoError::Decryption)?
+        .len();
+    output.truncate(plaintext_len);
+    Ok(output)
+}
+
+fn derive_argon2id_key(
+    password: &[u8],
+    salt: &[u8],
+) -> Result<Zeroizing<[u8; KEY_LEN]>, CryptoError> {
+    let params = Params::new(
+        ARGON2_MEMORY_KIB,
+        ARGON2_ITERATIONS,
+        ARGON2_PARALLELISM,
+        Some(KEY_LEN),
+    )
+    .map_err(|_| CryptoError::Encryption)?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let mut key = Zeroizing::new([0_u8; KEY_LEN]);
+    argon2
+        .hash_password_into(password, salt, key.as_mut())
+        .map_err(|_| CryptoError::Encryption)?;
+    Ok(key)
+}
+
+fn encrypt_password_v2(
+    plaintext: &[u8],
+    password: &[u8],
+    salt: [u8; SALT_LEN],
+    nonce: [u8; NONCE_LEN],
+) -> Result<String, CryptoError> {
+    let key = derive_argon2id_key(password, &salt)?;
+    let ciphertext = seal(plaintext, key.as_ref(), nonce, PASSWORD_AAD)?;
+    let mut combined =
+        Vec::with_capacity(PASSWORD_FORMAT_MAGIC.len() + SALT_LEN + NONCE_LEN + ciphertext.len());
+    combined.extend_from_slice(PASSWORD_FORMAT_MAGIC);
+    combined.extend_from_slice(&salt);
+    combined.extend_from_slice(&nonce);
+    combined.extend_from_slice(&ciphertext);
+    Ok(BASE64.encode(combined))
+}
+
+fn decrypt_password_v2(combined: &[u8], password: &[u8]) -> Result<String, CryptoError> {
+    let minimum = PASSWORD_FORMAT_MAGIC.len() + SALT_LEN + NONCE_LEN + TAG_LEN;
+    if combined.len() < minimum || !combined.starts_with(PASSWORD_FORMAT_MAGIC) {
+        return Err(CryptoError::InvalidFormat);
+    }
+    let salt_start = PASSWORD_FORMAT_MAGIC.len();
+    let nonce_start = salt_start + SALT_LEN;
+    let ciphertext_start = nonce_start + NONCE_LEN;
+    let salt = &combined[salt_start..nonce_start];
+    let nonce: [u8; NONCE_LEN] = combined[nonce_start..ciphertext_start]
+        .try_into()
+        .map_err(|_| CryptoError::InvalidFormat)?;
+    let key = derive_argon2id_key(password, salt).map_err(|_| CryptoError::Decryption)?;
+    let plaintext = open(
+        &combined[ciphertext_start..],
+        key.as_ref(),
+        nonce,
+        PASSWORD_AAD,
+    )?;
+    String::from_utf8(plaintext.to_vec()).map_err(|_| CryptoError::Decryption)
+}
+
+fn decrypt_password_legacy(combined: &[u8], password: &[u8]) -> Result<String, CryptoError> {
+    if combined.len() < SALT_LEN + NONCE_LEN + TAG_LEN {
+        return Err(CryptoError::InvalidFormat);
+    }
+    let salt = &combined[..SALT_LEN];
+    let nonce: [u8; NONCE_LEN] = combined[SALT_LEN..SALT_LEN + NONCE_LEN]
+        .try_into()
+        .map_err(|_| CryptoError::InvalidFormat)?;
+    let key = Zeroizing::new(derive_legacy_key(password, salt, LEGACY_PBKDF2_ITERATIONS));
+    let plaintext = open(&combined[SALT_LEN + NONCE_LEN..], key.as_ref(), nonce, &[])?;
+    String::from_utf8(plaintext.to_vec()).map_err(|_| CryptoError::Decryption)
+}
+
+fn encrypt_local(plaintext: &str, key: &[u8]) -> Result<String, CryptoError> {
+    if plaintext.len() > MAX_SECRET_BYTES {
+        return Err(CryptoError::InputTooLarge);
+    }
+    let nonce = random_bytes::<NONCE_LEN>()?;
+    let ciphertext = seal(plaintext.as_bytes(), key, nonce, LOCAL_AAD)?;
+    let mut combined = Vec::with_capacity(LOCAL_FORMAT_MAGIC.len() + NONCE_LEN + ciphertext.len());
+    combined.extend_from_slice(LOCAL_FORMAT_MAGIC);
+    combined.extend_from_slice(&nonce);
+    combined.extend_from_slice(&ciphertext);
+    Ok(BASE64.encode(combined))
+}
+
+fn decrypt_local(ciphertext_base64: &str, key: &[u8]) -> Result<String, CryptoError> {
+    if ciphertext_base64.len() > MAX_CIPHERTEXT_BASE64_BYTES {
+        return Err(CryptoError::InputTooLarge);
+    }
+    let combined = BASE64
+        .decode(ciphertext_base64)
+        .map_err(|_| CryptoError::InvalidFormat)?;
+    if combined.starts_with(LOCAL_FORMAT_MAGIC) {
+        let minimum = LOCAL_FORMAT_MAGIC.len() + NONCE_LEN + TAG_LEN;
+        if combined.len() < minimum {
+            return Err(CryptoError::InvalidFormat);
+        }
+        let nonce_start = LOCAL_FORMAT_MAGIC.len();
+        let ciphertext_start = nonce_start + NONCE_LEN;
+        let nonce = combined[nonce_start..ciphertext_start]
+            .try_into()
+            .map_err(|_| CryptoError::InvalidFormat)?;
+        let modern =
+            open(&combined[ciphertext_start..], key, nonce, LOCAL_AAD).and_then(|plaintext| {
+                String::from_utf8(plaintext.to_vec()).map_err(|_| CryptoError::Decryption)
+            });
+        if modern.is_ok() {
+            return modern;
+        }
+        // A legacy random nonce can begin with YHL2 by coincidence. Its AEAD tag
+        // still authenticates under the legacy layout, so fallback is fail-closed.
+        return decrypt_local_legacy_decoded(&combined, key).or(modern);
+    }
+    decrypt_local_legacy_decoded(&combined, key)
+}
+
+fn decrypt_local_legacy(ciphertext_base64: &str, key: &[u8]) -> Result<String, CryptoError> {
+    let combined = BASE64
+        .decode(ciphertext_base64)
+        .map_err(|_| CryptoError::InvalidFormat)?;
+    decrypt_local_legacy_decoded(&combined, key)
+}
+
+fn decrypt_local_legacy_decoded(combined: &[u8], key: &[u8]) -> Result<String, CryptoError> {
+    if combined.len() < NONCE_LEN + TAG_LEN {
+        return Err(CryptoError::InvalidFormat);
+    }
+    let nonce = combined[..NONCE_LEN]
+        .try_into()
+        .map_err(|_| CryptoError::InvalidFormat)?;
+    let plaintext = open(&combined[NONCE_LEN..], key, nonce, &[])?;
+    String::from_utf8(plaintext.to_vec()).map_err(|_| CryptoError::Decryption)
+}
+
+#[cfg(feature = "fuzzing")]
+pub(crate) fn fuzz_local_ciphertext(data: &[u8]) {
+    if data.len() <= MAX_SECRET_BYTES + LOCAL_FORMAT_MAGIC.len() + NONCE_LEN + TAG_LEN {
+        let _ = decrypt_local(&BASE64.encode(data), &[0x42; KEY_LEN]);
+    }
 }
 
 #[tauri::command]
-pub fn generate_encryption_key() -> String {
-    let key = generate_random_bytes(KEY_LEN);
-    BASE64.encode(&key)
-}
-
-#[tauri::command]
-pub fn has_encryption_key() -> bool {
+pub fn has_encryption_key() -> Result<bool, CryptoError> {
     has_credential(KEYCHAIN_KEY_NAME)
 }
 
-#[tauri::command]
-pub fn store_encryption_key(key_base64: String) -> Result<(), CryptoError> {
-    store_credential(KEYCHAIN_KEY_NAME, &key_base64)
-}
-
-#[tauri::command]
-pub fn get_encryption_key() -> Result<String, CryptoError> {
-    get_credential(KEYCHAIN_KEY_NAME)
-        .ok_or_else(|| CryptoError::Keychain("No encryption key found".into()))
-}
-
-#[tauri::command]
-pub fn delete_encryption_key() -> Result<(), CryptoError> {
-    delete_credential(KEYCHAIN_KEY_NAME)
+fn get_encryption_key() -> Result<Zeroizing<String>, CryptoError> {
+    get_credential(KEYCHAIN_KEY_NAME)?.ok_or(CryptoError::MissingEncryptionKey)
 }
 
 #[tauri::command]
 pub fn ensure_encryption_key() -> Result<bool, CryptoError> {
-    if has_credential(KEYCHAIN_KEY_NAME) {
-        log::info!("Encryption key already exists");
+    if has_credential(KEYCHAIN_KEY_NAME)? {
         return Ok(false);
     }
+    let key = Zeroizing::new(random_bytes::<KEY_LEN>()?);
+    let encoded = Zeroizing::new(BASE64.encode(key.as_ref()));
+    store_credential(KEYCHAIN_KEY_NAME, &encoded)?;
+    Ok(true)
+}
 
-    log::info!("No encryption key found, generating new one");
-    let key = generate_encryption_key();
-    store_credential(KEYCHAIN_KEY_NAME, &key)?;
-
-    if has_credential(KEYCHAIN_KEY_NAME) {
-        log::info!("Encryption key generated and verified successfully");
-        Ok(true)
-    } else {
-        log::error!("Encryption key was stored but verification failed — storage round-trip broken");
-        Err(CryptoError::Storage(
-            "Encryption key storage round-trip failed: key was written but cannot be read back. \
-             Check file permissions on ~/.local/share/.yhtua/"
-                .into(),
-        ))
-    }
+#[tauri::command]
+pub fn reset_encryption_key() -> Result<(), CryptoError> {
+    let key = Zeroizing::new(random_bytes::<KEY_LEN>()?);
+    let encoded = Zeroizing::new(BASE64.encode(key.as_ref()));
+    rotate_encryption_key_with(&OsCredentialBackend, &encoded)
 }
 
 #[tauri::command]
 pub fn encrypt_with_keychain_key(plaintext: String) -> Result<String, CryptoError> {
-    let key_base64 = get_encryption_key()?;
-    let key_bytes = BASE64
-        .decode(&key_base64)
-        .map_err(|_| CryptoError::InvalidFormat)?;
-
-    encrypt_aes256gcm(&plaintext, &key_bytes)
+    let encoded = get_encryption_key()?;
+    let key = decode_key(&encoded)?;
+    let plaintext = Zeroizing::new(plaintext);
+    encrypt_local(&plaintext, key.as_ref())
 }
 
 #[tauri::command]
 pub fn decrypt_with_keychain_key(ciphertext_base64: String) -> Result<String, CryptoError> {
-    let key_base64 = get_encryption_key()?;
-    let key_bytes = BASE64
-        .decode(&key_base64)
-        .map_err(|_| CryptoError::InvalidFormat)?;
-
-    decrypt_aes256gcm(&ciphertext_base64, &key_bytes)
+    let encoded = get_encryption_key()?;
+    let key = decode_key(&encoded)?;
+    decrypt_local(&ciphertext_base64, key.as_ref())
 }
 
-#[tauri::command]
-pub fn encrypt_with_key(plaintext: String, key_base64: String) -> Result<String, CryptoError> {
-    let key_bytes = BASE64
-        .decode(&key_base64)
-        .map_err(|_| CryptoError::InvalidFormat)?;
-    encrypt_aes256gcm(&plaintext, &key_bytes)
+fn encrypt_with_password_bytes(plaintext: &[u8], password: &[u8]) -> Result<String, CryptoError> {
+    if plaintext.len() > MAX_BACKUP_BYTES {
+        return Err(CryptoError::InputTooLarge);
+    }
+    if !(8..=MAX_PASSWORD_BYTES).contains(&password.len()) {
+        return Err(CryptoError::InvalidPassword);
+    }
+    encrypt_password_v2(
+        plaintext,
+        password,
+        random_bytes::<SALT_LEN>()?,
+        random_bytes::<NONCE_LEN>()?,
+    )
 }
 
-#[tauri::command]
-pub fn decrypt_with_key(ciphertext_base64: String, key_base64: String) -> Result<String, CryptoError> {
-    let key_bytes = BASE64
-        .decode(&key_base64)
+fn decrypt_with_password_bytes(
+    ciphertext_base64: &str,
+    password: &[u8],
+) -> Result<String, CryptoError> {
+    if ciphertext_base64.len() > MAX_CIPHERTEXT_BASE64_BYTES {
+        return Err(CryptoError::InputTooLarge);
+    }
+    if password.is_empty() || password.len() > MAX_PASSWORD_BYTES {
+        return Err(CryptoError::InvalidPassword);
+    }
+    let combined = BASE64
+        .decode(ciphertext_base64)
         .map_err(|_| CryptoError::InvalidFormat)?;
-    decrypt_aes256gcm(&ciphertext_base64, &key_bytes)
-}
-
-fn derive_key_from_password(password: &str, salt: &[u8]) -> [u8; KEY_LEN] {
-    let mut key = [0u8; KEY_LEN];
-    pbkdf2::derive(
-        pbkdf2::PBKDF2_HMAC_SHA256,
-        NonZeroU32::new(PBKDF2_ITERATIONS).unwrap(),
-        salt,
-        password.as_bytes(),
-        &mut key,
-    );
-    key
+    if combined.starts_with(PASSWORD_FORMAT_MAGIC) {
+        let modern = decrypt_password_v2(&combined, password);
+        if modern.is_ok() {
+            modern
+        } else {
+            // A legacy random salt can begin with YHP2 by coincidence. Only a
+            // valid legacy AES-GCM tag can make this compatibility path succeed.
+            decrypt_password_legacy(&combined, password).or(modern)
+        }
+    } else {
+        decrypt_password_legacy(&combined, password)
+    }
 }
 
 #[tauri::command]
 pub fn encrypt_with_password(plaintext: String, password: String) -> Result<String, CryptoError> {
-    let salt = generate_random_bytes(SALT_LEN);
-    let key = derive_key_from_password(&password, &salt);
-
-    let nonce_bytes = generate_random_bytes(NONCE_LEN);
-
-    let unbound_key =
-        UnboundKey::new(&AES_256_GCM, &key).map_err(|_| CryptoError::Encryption("Key error".into()))?;
-    let sealing_key = LessSafeKey::new(unbound_key);
-
-    let nonce =
-        Nonce::try_assume_unique_for_key(&nonce_bytes).map_err(|_| CryptoError::Encryption("Nonce error".into()))?;
-
-    let mut in_out = plaintext.into_bytes();
-    sealing_key
-        .seal_in_place_append_tag(nonce, Aad::empty(), &mut in_out)
-        .map_err(|_| CryptoError::Encryption("Seal error".into()))?;
-
-    let mut combined = Vec::with_capacity(SALT_LEN + NONCE_LEN + in_out.len());
-    combined.extend_from_slice(&salt);
-    combined.extend_from_slice(&nonce_bytes);
-    combined.extend_from_slice(&in_out);
-
-    Ok(BASE64.encode(&combined))
+    let plaintext = Zeroizing::new(plaintext);
+    let password = Zeroizing::new(password);
+    encrypt_with_password_bytes(plaintext.as_bytes(), password.as_bytes())
 }
 
 #[tauri::command]
@@ -387,97 +601,79 @@ pub fn decrypt_with_password(
     ciphertext_base64: String,
     password: String,
 ) -> Result<String, CryptoError> {
-    let combined = BASE64
-        .decode(&ciphertext_base64)
-        .map_err(|_| CryptoError::InvalidFormat)?;
-
-    if combined.len() < SALT_LEN + NONCE_LEN + 16 {
-        return Err(CryptoError::InvalidFormat);
-    }
-
-    let salt = &combined[..SALT_LEN];
-    let nonce_bytes = &combined[SALT_LEN..SALT_LEN + NONCE_LEN];
-    let ciphertext = &combined[SALT_LEN + NONCE_LEN..];
-
-    let key = derive_key_from_password(&password, salt);
-
-    let unbound_key =
-        UnboundKey::new(&AES_256_GCM, &key).map_err(|_| CryptoError::Decryption("Key error".into()))?;
-    let opening_key = LessSafeKey::new(unbound_key);
-
-    let nonce = Nonce::try_assume_unique_for_key(nonce_bytes)
-        .map_err(|_| CryptoError::Decryption("Nonce error".into()))?;
-
-    let mut in_out = ciphertext.to_vec();
-    let plaintext = opening_key
-        .open_in_place(nonce, Aad::empty(), &mut in_out)
-        .map_err(|_| CryptoError::Decryption("Wrong password or corrupted data".into()))?;
-
-    String::from_utf8(plaintext.to_vec()).map_err(|_| CryptoError::Decryption("Invalid UTF-8".into()))
+    let password = Zeroizing::new(password);
+    decrypt_with_password_bytes(&ciphertext_base64, password.as_bytes())
 }
 
-fn encrypt_aes256gcm(plaintext: &str, key: &[u8]) -> Result<String, CryptoError> {
-    let nonce_bytes = generate_random_bytes(NONCE_LEN);
-
-    let unbound_key =
-        UnboundKey::new(&AES_256_GCM, key).map_err(|_| CryptoError::Encryption("Key error".into()))?;
-    let sealing_key = LessSafeKey::new(unbound_key);
-
-    let nonce =
-        Nonce::try_assume_unique_for_key(&nonce_bytes).map_err(|_| CryptoError::Encryption("Nonce error".into()))?;
-
-    let mut in_out = plaintext.as_bytes().to_vec();
-    sealing_key
-        .seal_in_place_append_tag(nonce, Aad::empty(), &mut in_out)
-        .map_err(|_| CryptoError::Encryption("Seal error".into()))?;
-
-    let mut combined = Vec::with_capacity(NONCE_LEN + in_out.len());
-    combined.extend_from_slice(&nonce_bytes);
-    combined.extend_from_slice(&in_out);
-
-    Ok(BASE64.encode(&combined))
+fn get_sync_password() -> Result<Zeroizing<String>, CryptoError> {
+    get_credential(KEYCHAIN_SYNC_PASSWORD)?.ok_or(CryptoError::Keychain)
 }
 
-fn decrypt_aes256gcm(ciphertext_base64: &str, key: &[u8]) -> Result<String, CryptoError> {
-    let combined = BASE64
-        .decode(ciphertext_base64)
-        .map_err(|_| CryptoError::InvalidFormat)?;
+#[tauri::command]
+pub fn encrypt_with_sync_password(plaintext: String) -> Result<String, CryptoError> {
+    let plaintext = Zeroizing::new(plaintext);
+    let password = get_sync_password()?;
+    encrypt_with_password_bytes(plaintext.as_bytes(), password.as_bytes())
+}
 
-    if combined.len() < NONCE_LEN + 16 {
-        return Err(CryptoError::InvalidFormat);
-    }
-
-    let nonce_bytes = &combined[..NONCE_LEN];
-    let ciphertext = &combined[NONCE_LEN..];
-
-    let unbound_key =
-        UnboundKey::new(&AES_256_GCM, key).map_err(|_| CryptoError::Decryption("Key error".into()))?;
-    let opening_key = LessSafeKey::new(unbound_key);
-
-    let nonce = Nonce::try_assume_unique_for_key(nonce_bytes)
-        .map_err(|_| CryptoError::Decryption("Nonce error".into()))?;
-
-    let mut in_out = ciphertext.to_vec();
-    let plaintext = opening_key
-        .open_in_place(nonce, Aad::empty(), &mut in_out)
-        .map_err(|_| CryptoError::Decryption("Decryption failed".into()))?;
-
-    String::from_utf8(plaintext.to_vec()).map_err(|_| CryptoError::Decryption("Invalid UTF-8".into()))
+#[tauri::command]
+pub fn decrypt_with_sync_password(ciphertext_base64: String) -> Result<String, CryptoError> {
+    let password = get_sync_password()?;
+    decrypt_with_password_bytes(&ciphertext_base64, password.as_bytes())
 }
 
 #[tauri::command]
 pub fn store_sync_password(password: String) -> Result<(), CryptoError> {
+    let password = Zeroizing::new(password);
+    if !(8..=MAX_PASSWORD_BYTES).contains(&password.len()) {
+        return Err(CryptoError::InvalidPassword);
+    }
     store_credential(KEYCHAIN_SYNC_PASSWORD, &password)
 }
 
 #[tauri::command]
-pub fn get_sync_password() -> Result<String, CryptoError> {
-    get_credential(KEYCHAIN_SYNC_PASSWORD)
-        .ok_or_else(|| CryptoError::Keychain("No sync password found".into()))
+pub fn migrate_legacy_frontend_credentials(
+    encryption_key: Option<String>,
+    sync_password: Option<String>,
+    sync_path: Option<String>,
+) -> Result<(), CryptoError> {
+    let encryption_key = encryption_key.map(Zeroizing::new);
+    let sync_password = sync_password.map(Zeroizing::new);
+
+    // Validate the complete legacy payload before writing any part of it.
+    if let Some(key) = encryption_key.as_deref() {
+        let _ = decode_key(key)?;
+    }
+    if let Some(password) = sync_password.as_deref()
+        && (password.is_empty() || password.len() > MAX_PASSWORD_BYTES)
+    {
+        return Err(CryptoError::InvalidPassword);
+    }
+    if let Some(path) = sync_path.as_deref() {
+        validate_sync_path(path)?;
+    }
+
+    // Current OS-store values always take precedence over stale localStorage data.
+    for (name, value) in [
+        (
+            KEYCHAIN_KEY_NAME,
+            encryption_key.as_ref().map(|value| value.as_str()),
+        ),
+        (
+            KEYCHAIN_SYNC_PASSWORD,
+            sync_password.as_ref().map(|value| value.as_str()),
+        ),
+        (KEYCHAIN_SYNC_PATH, sync_path.as_deref()),
+    ] {
+        if let Some(value) = value {
+            store_credential_if_missing_with(&OsCredentialBackend, name, value)?;
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
-pub fn has_sync_password() -> bool {
+pub fn has_sync_password() -> Result<bool, CryptoError> {
     has_credential(KEYCHAIN_SYNC_PASSWORD)
 }
 
@@ -486,19 +682,37 @@ pub fn delete_sync_password() -> Result<(), CryptoError> {
     delete_credential(KEYCHAIN_SYNC_PASSWORD)
 }
 
+fn validate_sync_path(path: &str) -> Result<(), CryptoError> {
+    if path.is_empty() || path.len() > 4096 || path.contains('\0') || !Path::new(path).is_absolute()
+    {
+        return Err(CryptoError::InvalidFormat);
+    }
+    Ok(())
+}
+
+pub(crate) fn get_sync_directory() -> Result<PathBuf, CryptoError> {
+    let path = get_credential(KEYCHAIN_SYNC_PATH)?
+        .map(|value| PathBuf::from(value.as_str()))
+        .ok_or(CryptoError::Keychain)?;
+    validate_sync_path(path.to_str().ok_or(CryptoError::InvalidFormat)?)?;
+    Ok(path)
+}
+
 #[tauri::command]
 pub fn store_sync_path(path: String) -> Result<(), CryptoError> {
+    validate_sync_path(&path)?;
     store_credential(KEYCHAIN_SYNC_PATH, &path)
 }
 
 #[tauri::command]
 pub fn get_sync_path() -> Result<String, CryptoError> {
-    get_credential(KEYCHAIN_SYNC_PATH)
-        .ok_or_else(|| CryptoError::Keychain("No sync path found".into()))
+    get_credential(KEYCHAIN_SYNC_PATH)?
+        .map(|value| value.to_string())
+        .ok_or(CryptoError::Keychain)
 }
 
 #[tauri::command]
-pub fn has_sync_path() -> bool {
+pub fn has_sync_path() -> Result<bool, CryptoError> {
     has_credential(KEYCHAIN_SYNC_PATH)
 }
 
@@ -507,61 +721,277 @@ pub fn delete_sync_path() -> Result<(), CryptoError> {
     delete_credential(KEYCHAIN_SYNC_PATH)
 }
 
-#[tauri::command]
-pub fn hmac_sha256(data: String, key_base64: String) -> Result<String, CryptoError> {
-    use ring::hmac;
-    let key_bytes = BASE64
-        .decode(&key_base64)
-        .map_err(|_| CryptoError::InvalidFormat)?;
-    let key = hmac::Key::new(hmac::HMAC_SHA256, &key_bytes);
-    let tag = hmac::sign(&key, data.as_bytes());
-    Ok(BASE64.encode(tag.as_ref()))
-}
-
-#[tauri::command]
-pub fn verify_hmac_sha256(data: String, key_base64: String, mac_base64: String) -> Result<bool, CryptoError> {
-    use ring::hmac;
-    let key_bytes = BASE64
-        .decode(&key_base64)
-        .map_err(|_| CryptoError::InvalidFormat)?;
-    let mac_bytes = BASE64
-        .decode(&mac_base64)
-        .map_err(|_| CryptoError::InvalidFormat)?;
-    let key = hmac::Key::new(hmac::HMAC_SHA256, &key_bytes);
-    Ok(hmac::verify(&key, data.as_bytes(), &mac_bytes).is_ok())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{cell::RefCell, collections::HashMap};
 
-    #[test]
-    fn test_encrypt_decrypt_with_password() {
-        let plaintext = "Hello, World! This is a secret.";
-        let password = "my_secure_password";
+    const TEST_KEY: [u8; KEY_LEN] = [0x42; KEY_LEN];
+    const TEST_NONCE: [u8; NONCE_LEN] = [0x24; NONCE_LEN];
+    const TEST_SALT: [u8; SALT_LEN] = [0x11; SALT_LEN];
 
-        let encrypted = encrypt_with_password(plaintext.to_string(), password.to_string()).unwrap();
-        let decrypted = decrypt_with_password(encrypted, password.to_string()).unwrap();
+    #[derive(Default)]
+    struct MemoryCredentialBackend {
+        values: RefCell<HashMap<(String, String), String>>,
+        unavailable: bool,
+    }
 
-        assert_eq!(plaintext, decrypted);
+    impl CredentialBackend for MemoryCredentialBackend {
+        fn get(&self, service: &str, name: &str) -> Result<Option<Zeroizing<String>>, CryptoError> {
+            if self.unavailable {
+                return Err(CryptoError::Keychain);
+            }
+            Ok(self
+                .values
+                .borrow()
+                .get(&(service.to_owned(), name.to_owned()))
+                .cloned()
+                .map(Zeroizing::new))
+        }
+
+        fn set(&self, service: &str, name: &str, value: &str) -> Result<(), CryptoError> {
+            if self.unavailable {
+                return Err(CryptoError::Keychain);
+            }
+            self.values
+                .borrow_mut()
+                .insert((service.to_owned(), name.to_owned()), value.to_owned());
+            Ok(())
+        }
+
+        fn delete(&self, service: &str, name: &str) -> Result<(), CryptoError> {
+            if self.unavailable {
+                return Err(CryptoError::Keychain);
+            }
+            self.values
+                .borrow_mut()
+                .remove(&(service.to_owned(), name.to_owned()));
+            Ok(())
+        }
     }
 
     #[test]
-    fn test_wrong_password_fails() {
-        let plaintext = "Secret data";
-        let password = "correct_password";
-        let wrong_password = "wrong_password";
-
-        let encrypted = encrypt_with_password(plaintext.to_string(), password.to_string()).unwrap();
-        let result = decrypt_with_password(encrypted, wrong_password.to_string());
-
-        assert!(result.is_err());
+    fn credential_backend_failures_fail_closed() {
+        let backend = MemoryCredentialBackend {
+            unavailable: true,
+            ..Default::default()
+        };
+        assert!(matches!(
+            get_credential_with(&backend, KEYCHAIN_KEY_NAME),
+            Err(CryptoError::Keychain)
+        ));
     }
 
     #[test]
-    fn test_key_generation() {
-        let key = generate_encryption_key();
-        let decoded = BASE64.decode(&key).unwrap();
-        assert_eq!(decoded.len(), KEY_LEN);
+    fn legacy_keychain_entry_is_moved_to_the_stable_service() {
+        let backend = MemoryCredentialBackend::default();
+        let legacy_value = BASE64.encode([0x33_u8; KEY_LEN]);
+        backend
+            .set(LEGACY_KEYCHAIN_SERVICE, KEYCHAIN_KEY_NAME, &legacy_value)
+            .expect("mock write succeeds");
+        assert_eq!(
+            get_credential_with(&backend, KEYCHAIN_KEY_NAME)
+                .expect("migration succeeds")
+                .expect("credential exists")
+                .as_str(),
+            legacy_value
+        );
+        assert!(
+            backend
+                .get(LEGACY_KEYCHAIN_SERVICE, KEYCHAIN_KEY_NAME)
+                .expect("mock read succeeds")
+                .is_none()
+        );
+        assert!(
+            backend
+                .get(KEYCHAIN_SERVICE, KEYCHAIN_KEY_NAME)
+                .expect("mock read succeeds")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn legacy_frontend_migration_never_overwrites_a_current_key() {
+        let backend = MemoryCredentialBackend::default();
+        backend
+            .set(KEYCHAIN_SERVICE, KEYCHAIN_KEY_NAME, "current-value")
+            .expect("current key write succeeds");
+        store_credential_if_missing_with(&backend, KEYCHAIN_KEY_NAME, "stale-value")
+            .expect("migration succeeds");
+        assert_eq!(
+            backend
+                .get(KEYCHAIN_SERVICE, KEYCHAIN_KEY_NAME)
+                .expect("current key read succeeds")
+                .expect("current key exists")
+                .as_str(),
+            "current-value"
+        );
+    }
+
+    #[test]
+    fn encryption_key_rotation_overwrites_before_legacy_cleanup() {
+        let backend = MemoryCredentialBackend::default();
+        let old_key = BASE64.encode([0x11_u8; KEY_LEN]);
+        let new_key = BASE64.encode([0x22_u8; KEY_LEN]);
+        backend
+            .set(KEYCHAIN_SERVICE, KEYCHAIN_KEY_NAME, &old_key)
+            .expect("current key write succeeds");
+        backend
+            .set(LEGACY_KEYCHAIN_SERVICE, KEYCHAIN_KEY_NAME, &old_key)
+            .expect("legacy key write succeeds");
+
+        rotate_encryption_key_with(&backend, &new_key).expect("rotation succeeds");
+
+        assert_eq!(
+            backend
+                .get(KEYCHAIN_SERVICE, KEYCHAIN_KEY_NAME)
+                .expect("current key read succeeds")
+                .expect("current key exists")
+                .as_str(),
+            new_key
+        );
+        assert!(
+            backend
+                .get(LEGACY_KEYCHAIN_SERVICE, KEYCHAIN_KEY_NAME)
+                .expect("legacy key read succeeds")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn pbkdf2_sha256_matches_known_vector() {
+        let key = derive_legacy_key(b"password", b"salt", 1);
+        assert_eq!(
+            BASE64.encode(key),
+            "Eg+2z/z4syxD5yJSVsT4N6hlSMkszDVICAWYfLcL4Xs="
+        );
+    }
+
+    #[test]
+    fn password_v2_round_trip_is_deterministic_with_fixed_randomness() {
+        let encrypted =
+            encrypt_password_v2(b"example backup", b"correct horse", TEST_SALT, TEST_NONCE)
+                .expect("encryption succeeds");
+        let decoded = BASE64.decode(&encrypted).expect("base64 is valid");
+        assert!(decoded.starts_with(PASSWORD_FORMAT_MAGIC));
+        assert_eq!(
+            decrypt_password_v2(&decoded, b"correct horse").expect("decryption succeeds"),
+            "example backup"
+        );
+    }
+
+    #[test]
+    fn password_v2_rejects_wrong_password_and_tampering() {
+        let encrypted =
+            encrypt_password_v2(b"example backup", b"correct horse", TEST_SALT, TEST_NONCE)
+                .expect("encryption succeeds");
+        let mut decoded = BASE64.decode(encrypted).expect("base64 is valid");
+        assert!(decrypt_password_v2(&decoded, b"wrong password").is_err());
+        let last = decoded.len() - 1;
+        decoded[last] ^= 1;
+        assert!(decrypt_password_v2(&decoded, b"correct horse").is_err());
+    }
+
+    #[test]
+    fn password_v2_rejects_truncated_or_modified_headers() {
+        let encrypted =
+            encrypt_password_v2(b"example backup", b"correct horse", TEST_SALT, TEST_NONCE)
+                .expect("encryption succeeds");
+        let mut decoded = BASE64.decode(encrypted).expect("base64 is valid");
+        assert!(decrypt_password_v2(&decoded[..20], b"correct horse").is_err());
+        decoded[0] ^= 1;
+        assert!(decrypt_password_v2(&decoded, b"correct horse").is_err());
+    }
+
+    #[test]
+    fn legacy_password_backup_remains_readable() {
+        let key = derive_legacy_key(b"legacy password", &TEST_SALT, LEGACY_PBKDF2_ITERATIONS);
+        let ciphertext =
+            seal(b"legacy backup", &key, TEST_NONCE, &[]).expect("legacy encryption succeeds");
+        let mut legacy = TEST_SALT.to_vec();
+        legacy.extend_from_slice(&TEST_NONCE);
+        legacy.extend_from_slice(&ciphertext);
+        assert_eq!(
+            decrypt_password_legacy(&legacy, b"legacy password")
+                .expect("legacy decryption succeeds"),
+            "legacy backup"
+        );
+    }
+
+    #[test]
+    fn legacy_password_marker_collision_remains_readable() {
+        let password = b"correct horse";
+        let mut salt = TEST_SALT;
+        salt[..PASSWORD_FORMAT_MAGIC.len()].copy_from_slice(PASSWORD_FORMAT_MAGIC);
+        let key = Zeroizing::new(derive_legacy_key(password, &salt, LEGACY_PBKDF2_ITERATIONS));
+        let ciphertext =
+            seal(b"legacy collision", key.as_ref(), TEST_NONCE, &[]).expect("encryption succeeds");
+        let mut combined = Vec::new();
+        combined.extend_from_slice(&salt);
+        combined.extend_from_slice(&TEST_NONCE);
+        combined.extend_from_slice(&ciphertext);
+
+        assert_eq!(
+            decrypt_with_password_bytes(&BASE64.encode(combined), password)
+                .expect("collision decrypts"),
+            "legacy collision"
+        );
+    }
+
+    #[test]
+    fn local_v2_and_legacy_formats_both_decrypt() {
+        let modern_ciphertext = seal(b"JBSWY3DPEHPK3PXP", &TEST_KEY, TEST_NONCE, LOCAL_AAD)
+            .expect("encryption succeeds");
+        let mut modern = LOCAL_FORMAT_MAGIC.to_vec();
+        modern.extend_from_slice(&TEST_NONCE);
+        modern.extend_from_slice(&modern_ciphertext);
+        assert_eq!(
+            decrypt_local(&BASE64.encode(modern), &TEST_KEY).expect("modern decrypt succeeds"),
+            "JBSWY3DPEHPK3PXP"
+        );
+
+        let legacy_ciphertext =
+            seal(b"JBSWY3DPEHPK3PXP", &TEST_KEY, TEST_NONCE, &[]).expect("encryption succeeds");
+        let mut legacy = TEST_NONCE.to_vec();
+        legacy.extend_from_slice(&legacy_ciphertext);
+        assert_eq!(
+            decrypt_local(&BASE64.encode(legacy), &TEST_KEY).expect("legacy decrypt succeeds"),
+            "JBSWY3DPEHPK3PXP"
+        );
+    }
+
+    #[test]
+    fn legacy_local_marker_collision_remains_readable() {
+        let mut nonce = TEST_NONCE;
+        nonce[..LOCAL_FORMAT_MAGIC.len()].copy_from_slice(LOCAL_FORMAT_MAGIC);
+        let ciphertext =
+            seal(b"JBSWY3DPEHPK3PXP", &TEST_KEY, nonce, &[]).expect("encryption succeeds");
+        let mut combined = Vec::new();
+        combined.extend_from_slice(&nonce);
+        combined.extend_from_slice(&ciphertext);
+
+        assert_eq!(
+            decrypt_local(&BASE64.encode(combined), &TEST_KEY).expect("collision decrypts"),
+            "JBSWY3DPEHPK3PXP"
+        );
+    }
+
+    #[test]
+    fn local_encryption_uses_a_fresh_nonce() {
+        let first = encrypt_local("JBSWY3DPEHPK3PXP", &TEST_KEY).expect("encryption succeeds");
+        let second = encrypt_local("JBSWY3DPEHPK3PXP", &TEST_KEY).expect("encryption succeeds");
+        assert_ne!(first, second);
+        assert_eq!(
+            decrypt_local(&first, &TEST_KEY).expect("decryption succeeds"),
+            "JBSWY3DPEHPK3PXP"
+        );
+    }
+
+    #[test]
+    fn key_and_path_validation_fail_closed() {
+        assert!(decode_key("not base64").is_err());
+        assert!(decode_key(&BASE64.encode([0_u8; 31])).is_err());
+        assert!(validate_sync_path("../relative").is_err());
+        assert!(validate_sync_path("/absolute/path").is_ok());
     }
 }

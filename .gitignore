@@ -5,6 +5,7 @@
 .nitro
 .cache
 dist
+landing/.astro
 
 # Node dependencies
 node_modules

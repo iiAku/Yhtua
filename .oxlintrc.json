@@ -5,9 +5,9 @@
     "correctness": "error"
   },
   "rules": {
-    "eslint/no-unused-vars": "off",
-    "typescript/no-non-null-assertion": "off",
-    "typescript/no-explicit-any": "off",
+    "eslint/no-unused-vars": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-explicit-any": "error",
     "eslint/prefer-const": "error",
     "eslint/prefer-template": "error"
   }

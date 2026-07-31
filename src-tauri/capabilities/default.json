@@ -5,37 +5,8 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "core:path:default",
     "dialog:allow-open",
-    "dialog:allow-save",
-    {
-      "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-write-text-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-exists",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-mkdir",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-read-dir",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-remove",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-rename",
-      "allow": [{ "path": "**" }]
-    },
+    "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text"
   ]
 }

@@ -30,6 +30,7 @@
         <input
           v-if="token"
           v-model="token.otp.label"
+          aria-label="Token name"
           class="w-full rounded-xl border-0 bg-vault-elevated px-3.5 py-2.5 text-vault-text text-sm font-medium placeholder:text-vault-text-muted ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-accent/40 transition-all"
           placeholder="Token name"
         />
@@ -38,6 +39,10 @@
           <input
             v-model="secretValue"
             :type="showSecret ? 'text' : 'password'"
+            aria-label="Base32 secret key"
+            autocomplete="off"
+            autocapitalize="characters"
+            :spellcheck="false"
             class="w-full rounded-xl border-0 bg-vault-elevated px-3.5 py-2.5 pr-10 text-vault-text text-sm font-mono placeholder:text-vault-text-muted ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-accent/40 transition-all"
             placeholder="Secret key"
             @input="secretValue = secretValue.toUpperCase()"
@@ -45,7 +50,8 @@
           <button
             type="button"
             class="absolute inset-y-0 right-0 flex items-center pr-3 text-vault-text-muted hover:text-vault-text-secondary transition-colors"
-            aria-label="Toggle secret visibility"
+            :aria-label="showSecret ? 'Hide secret' : 'Show secret'"
+            :aria-pressed="showSecret"
             @click="showSecret = !showSecret"
           >
             <svg
@@ -55,6 +61,7 @@
               viewBox="0 0 24 24"
               stroke-width="1.5"
               stroke="currentColor"
+              aria-hidden="true"
             >
               <path
                 stroke-linecap="round"
@@ -69,6 +76,7 @@
               viewBox="0 0 24 24"
               stroke-width="1.5"
               stroke="currentColor"
+              aria-hidden="true"
             >
               <path
                 stroke-linecap="round"
@@ -84,7 +92,7 @@
           </button>
         </div>
 
-        <TokenLength @digitSelected="setDigit" />
+        <TokenLength v-if="token" v-model="token.otp.digits" />
 
         <button
           v-if="token"
@@ -121,7 +129,10 @@ import { decryptSecret, encryptSecret } from '~/composables/useCrypto'
 
 const route = useRoute()
 
-const token = ref<Token | undefined>(getTokens().find((token) => token.id === route.params.id))
+const storedToken = getTokens().find((token) => token.id === route.params.id)
+const token = ref<Token | undefined>(
+  storedToken ? { ...storedToken, otp: { ...storedToken.otp } } : undefined,
+)
 
 if (!token.value) {
   navigateTo('/')
@@ -130,19 +141,45 @@ if (!token.value) {
 const secretValue = ref('')
 const originalSecret = ref('')
 const showSecret = ref(false)
+let secretLoadSequence = 0
 
-onMounted(async () => {
+const loadSecret = async () => {
+  const sequence = ++secretLoadSequence
   if (token.value) {
     try {
       const decrypted = token.value.otp.encrypted
         ? await decryptSecret(token.value.otp.secret)
         : token.value.otp.secret
+      if (document.hidden || sequence !== secretLoadSequence) return
       secretValue.value = decrypted
       originalSecret.value = decrypted
     } catch (error) {
       console.error('Failed to decrypt secret:', error)
     }
   }
+}
+
+const onVisibilityChange = () => {
+  if (document.hidden) {
+    secretLoadSequence += 1
+    secretValue.value = ''
+    originalSecret.value = ''
+    showSecret.value = false
+  } else {
+    void loadSecret()
+  }
+}
+
+onMounted(async () => {
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  await loadSecret()
+})
+
+onBeforeUnmount(() => {
+  secretLoadSequence += 1
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  secretValue.value = ''
+  originalSecret.value = ''
 })
 
 const notification = useNotification()
@@ -165,20 +202,28 @@ const closeModal = async (_type: string, response: boolean) => {
   }
 }
 
-const setDigit = (newDigit: number) => {
-  if (token.value) {
-    token.value.otp.digits = newDigit
-  }
-}
-
 const saveToken = async (tokenToSave: Token) => {
-  const updates: Partial<Token['otp']> = {
+  const validated = addTokenSchema.safeParse({
     label: tokenToSave.otp.label,
+    secret: secretValue.value,
     digits: tokenToSave.otp.digits,
+  })
+  if (!validated.success) {
+    await useShowNotification(notification, {
+      text: validated.error.issues[0]?.message ?? 'Invalid token',
+      delay: 2000,
+      type: NotificationType.Danger,
+    })
+    return
   }
 
-  if (secretValue.value && secretValue.value !== originalSecret.value) {
-    updates.secret = await encryptSecret(secretValue.value)
+  const updates: Partial<Token['otp']> = {
+    label: validated.data.label,
+    digits: validated.data.digits,
+  }
+
+  if (validated.data.secret !== originalSecret.value) {
+    updates.secret = await encryptSecret(validated.data.secret)
     updates.encrypted = true
   }
 
@@ -191,10 +236,7 @@ const saveToken = async (tokenToSave: Token) => {
 }
 
 const deleteToken = async (token: Token) => {
-  addTombstone(token.id)
-  store.setState({
-    tokens: store.getState().tokens.filter((t: Token) => t.id !== token.id),
-  })
+  storeDeleteToken(token.id)
 
   await useShowNotification(notification, {
     text: 'Token deleted',
