@@ -4,6 +4,10 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ## [Unreleased]
 
+### Build/Release
+
+- Updated Gitleaks Action to its Node 24-based v3 release and suppressed incompatible TypeScript major-update automation until the Vue type-checking stack supports it.
+
 ## [2.8.0] - 2026-07-31
 
 ### Security
