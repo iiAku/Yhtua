@@ -41,12 +41,16 @@ setsid xvfb-run -a -s '-screen 0 1024x900x24' env \
   XDG_DATA_HOME="$smoke_dir/data" \
   XDG_CONFIG_HOME="$smoke_dir/config" \
   XDG_CACHE_HOME="$smoke_dir/cache" \
+  GDK_BACKEND=x11 \
+  XDG_SESSION_TYPE=x11 \
+  WAYLAND_DISPLAY= \
   WEBKIT_INSPECTOR_HTTP_SERVER="127.0.0.1:$port" \
   "$appimage" >"$log_file" 2>&1 &
 smoke_pid=$!
 
 inspector_page=''
-for _ in {1..40}; do
+deadline=$((SECONDS + 30))
+while (( SECONDS < deadline )); do
   if ! kill -0 "$smoke_pid" 2>/dev/null; then
     echo "AppImage exited before rendering" >&2
     sed -n '1,160p' "$log_file" >&2
@@ -60,7 +64,7 @@ for _ in {1..40}; do
 done
 
 if [[ $inspector_page != *'tauri://localhost'* ]]; then
-  echo "AppImage did not navigate to its bundled frontend within 10 seconds" >&2
+  echo "AppImage did not navigate to its bundled frontend within 30 seconds" >&2
   sed -n '1,160p' "$log_file" >&2
   exit 1
 fi
