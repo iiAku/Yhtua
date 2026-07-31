@@ -13,6 +13,11 @@ if [[ ! -x "$appimage" ]]; then
   exit 1
 fi
 
+application_args=()
+if [[ $appimage == *.AppImage ]]; then
+  application_args+=(--appimage-extract-and-run)
+fi
+
 for command in setsid xvfb-run; do
   if ! command -v "$command" >/dev/null; then
     echo "Required smoke-test command is unavailable: $command" >&2
@@ -48,7 +53,7 @@ setsid xvfb-run -a -s '-screen 0 1024x900x24' env \
   WAYLAND_DISPLAY= \
   WEBKIT_DISABLE_COMPOSITING_MODE=1 \
   YHTUA_UI_SMOKE_TEST=1 \
-  "$appimage" --appimage-extract-and-run >"$log_file" 2>&1 &
+  "$appimage" "${application_args[@]}" >"$log_file" 2>&1 &
 smoke_pid=$!
 
 deadline=$((SECONDS + 30))
