@@ -1,5 +1,6 @@
 mod crypto;
 mod files;
+mod smoke;
 
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]
@@ -42,6 +43,7 @@ pub fn run() {
             files::sync_backup_exists,
             files::read_sync_backup,
             files::write_sync_backup,
+            smoke::report_ui_ready,
         ])
         .plugin(
             tauri_plugin_log::Builder::default()
