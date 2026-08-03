@@ -1,5 +1,15 @@
 <template>
   <div class="h-screen flex flex-col bg-vault-base overflow-hidden">
+    <DangerModal
+      :type="modal.Danger.type"
+      :title="modal.Danger.title"
+      :text="modal.Danger.text"
+      :validateTextButton="modal.Danger.validateTextButton"
+      :cancelTextButton="modal.Danger.cancelTextButton"
+      :open="modal.Danger.open"
+      @close-modal="closeResetModal"
+    />
+
     <Navbar :tokenId="token?.id" />
 
     <!-- Ambient glow -->
@@ -221,7 +231,13 @@
 <script setup lang="ts">
 import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager'
 
+// Long enough to actually paste, short enough that a code does not linger.
+// The clipboard is also cleared on hide and on unmount, which is the real guard.
+const CLIPBOARD_CLEAR_MS = 30_000
+const COPIED_BADGE_MS = 2_000
+
 const route = useRoute()
+const modal = useModal()
 
 const copied = ref(false)
 const copyError = ref(false)
@@ -273,25 +289,42 @@ const retry = async () => {
   loading.value = false
 }
 
-const resetEncryption = async () => {
-  if (!confirm('Reset the encryption key and permanently remove all unreadable tokens?')) return
+// An in-app modal rather than window.confirm: this permanently destroys tokens,
+// and a webview that does not implement confirm() would silently answer "no"
+// (or, worse, block the whole webview) with nothing shown to the user.
+const resetEncryption = () =>
+  useShowModal(modal.value.Danger, {
+    title: 'Reset Encryption Key',
+    text: 'This permanently removes every token that can no longer be read. This action cannot be undone.',
+    validateTextButton: 'Reset tokens',
+    cancelTextButton: 'Cancel',
+    type: 'Danger',
+  })
+
+const closeResetModal = async (_type: string, response: boolean) => {
+  modal.value.Danger.open = false
+  if (!response) return
   try {
     await resetEncryptionKey()
     storeDeleteAllTokens()
     navigateTo('/')
-  } catch {
-    error.value = 'Unable to reset the encryption key'
+  } catch (resetError) {
+    error.value = resetError instanceof Error ? resetError.message : 'Unable to reset the key'
   }
 }
 
-let lastCopiedValue: string | null = null
+// Only a fingerprint is kept, never the code: the pending clear outlives this
+// page, so holding the plaintext would keep a live code in memory for 30s after
+// the user has navigated away.
+let lastCopiedFingerprint: string | null = null
 let copySequence = 0
+let clearTimer: ReturnType<typeof setTimeout> | undefined
 
-const clearClipboard = async (ownedValue: string | null = lastCopiedValue) => {
-  if (!ownedValue) return
+const clearClipboard = async (owned: string | null = lastCopiedFingerprint) => {
+  if (!owned) return
   try {
-    const cleared = await clearOwnedClipboard(ownedValue, readText, writeText)
-    if (cleared && lastCopiedValue === ownedValue) lastCopiedValue = null
+    const cleared = await clearOwnedClipboard(owned, readText, writeText)
+    if (cleared && lastCopiedFingerprint === owned) lastCopiedFingerprint = null
   } catch {}
 }
 
@@ -301,12 +334,17 @@ const copy = async () => {
   const copiedValue = renderedToken.value
   try {
     await writeText(copiedValue)
-    lastCopiedValue = copiedValue
+    const fingerprint = await clipboardFingerprint(copiedValue)
+    lastCopiedFingerprint = fingerprint
     copied.value = true
     copyError.value = false
-    await useSleep(500)
-    await clearClipboard(copiedValue)
-    await useSleep(1500)
+
+    // The auto-clear is a timer, not an await: blocking the badge on it used to
+    // wipe the clipboard 500ms after the copy, long before anyone could paste.
+    if (clearTimer) clearTimeout(clearTimer)
+    clearTimer = setTimeout(() => void clearClipboard(fingerprint), CLIPBOARD_CLEAR_MS)
+
+    await useSleep(COPIED_BADGE_MS)
     if (sequence === copySequence) copied.value = false
   } catch (error) {
     console.error('Failed to copy:', error)
@@ -317,8 +355,10 @@ const copy = async () => {
 }
 
 const onVisibilityChange = () => {
+  // Deliberately does not clear the clipboard. Pasting a code means switching to
+  // another app, which hides this window — clearing here wiped the code at the
+  // exact moment the user went to use it. The timer armed in copy() is the guard.
   documentHidden.value = document.hidden
-  if (document.hidden) void clearClipboard()
 }
 
 onMounted(async () => {
@@ -341,7 +381,9 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  void clearClipboard()
+  // The clear timer is intentionally left running: navigating back must not wipe
+  // a code the user just copied. It still fires — this is a SPA, so the module
+  // outlives the route — and clearOwnedClipboard only clears what we wrote.
   clearSecretCache()
   renderedToken.value = ''
   if (intervalId) clearInterval(intervalId)
