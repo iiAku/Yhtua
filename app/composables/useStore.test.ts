@@ -4,11 +4,13 @@ import {
   exportImportSchema,
   getTokens,
   MAX_TOKENS,
+  defaultStore,
   mergePersistedStore,
   normalizeBase32Secret,
   plaintextBackupSchema,
   portableBackupMetadataMatches,
   store,
+  storeAddToken,
   storeDeleteAllTokens,
   storeDeleteToken,
   tokenSchema,
@@ -174,6 +176,64 @@ describe('token boundary schemas', () => {
     expect(store.getState().tokens).toEqual([])
     expect(store.getState().tombstones).toHaveLength(1)
     expect(store.getState().tombstones[0]?.id).toBe(token.id)
+  })
+
+  it('imports a Yhtua v1 backup and upgrades it to the current shape', () => {
+    const legacy = {
+      version: '1.0',
+      tokens: [
+        {
+          id: 'legacy-1',
+          otp: {
+            issuer: 'issuer',
+            label: 'alice@example.com',
+            algorithm: 'sha-256',
+            digits: 6,
+            period: 30,
+            secret: 'jbsw y3dp ehpk 3pxp',
+          },
+        },
+      ],
+    }
+
+    const parsed = plaintextBackupSchema.safeParse(legacy)
+    expect(parsed.success).toBe(true)
+
+    store.setState({ version: 2, tokens: [], tombstones: [] })
+    expect(storeAddToken(parsed.data?.tokens ?? [])).toBe(1)
+    expect(store.getState().tokens[0]?.otp).toEqual({
+      issuer: 'issuer',
+      label: 'alice@example.com',
+      algorithm: 'SHA256',
+      digits: 6,
+      period: 30,
+      secret: 'JBSWY3DPEHPK3PXP',
+      encrypted: false,
+    })
+  })
+
+  it('drops the optional issuer from a backup without losing the token', () => {
+    const parsed = plaintextBackupSchema.safeParse({
+      version: '1.0',
+      tokens: [{ id: 'legacy-2', otp: { label: 'bob', secret: 'JBSWY3DPEHPK3PXP' } }],
+    })
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.tokens[0]?.otp).toMatchObject({ issuer: '', algorithm: 'SHA1' })
+  })
+
+  it('resurrects a deleted token on import so it survives the next load', () => {
+    // Deleting everything then restoring a backup re-adds the same ids. Leaving
+    // the tombstones behind made the tokens vanish on the next rehydrate.
+    store.setState({ version: 2, tokens: [token], tombstones: [] })
+    storeDeleteAllTokens()
+    expect(store.getState().tokens).toEqual([])
+    expect(store.getState().tombstones).toHaveLength(1)
+
+    expect(storeAddToken(token)).toBe(1)
+    expect(store.getState().tombstones).toEqual([])
+
+    const rehydrated = mergePersistedStore(store.getState(), defaultStore())
+    expect(rehydrated.tokens.map(({ id }) => id)).toEqual([token.id])
   })
 
   it('records tombstones when deleting every token so an empty vault can sync', () => {

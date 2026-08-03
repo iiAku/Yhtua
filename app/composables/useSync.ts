@@ -75,14 +75,17 @@ export interface SyncResult {
   tokensCount?: number
 }
 
-const syncBackupSchema = z
-  .object({
-    version: z.enum(['2.2.0', '2.3.0']),
-    encrypted: z.literal(true),
-    syncedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-    data: z.string().min(1).max(MAX_ENCRYPTED_BACKUP_BYTES),
-  })
-  .strict()
+// Deliberately not .strict(): backups written before 2.7.1 carry a vestigial
+// `hmac` field, and rejecting the whole file over a key we no longer read makes
+// an existing remote backup permanently unreadable. Unknown keys are stripped,
+// so a rewrite drops them. The fields we act on are still validated here and
+// cross-checked against the authenticated payload by portableBackupMetadataMatches.
+const syncBackupSchema = z.object({
+  version: z.enum(['2.2.0', '2.3.0']),
+  encrypted: z.literal(true),
+  syncedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  data: z.string().min(1).max(MAX_ENCRYPTED_BACKUP_BYTES),
+})
 
 const SYNC_METADATA_KEY = 'yhtua_sync_metadata'
 

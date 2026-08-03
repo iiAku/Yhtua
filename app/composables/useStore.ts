@@ -15,7 +15,8 @@ const MAX_LABEL_LENGTH = 256
 const MAX_SECRET_LENGTH = 4 * 1024
 const MAX_ENCRYPTED_SECRET_LENGTH = 8 * 1024
 const MAX_ID_LENGTH = 128
-const SUPPORTED_BACKUP_VERSIONS = ['2.0.0', '2.1.0', '2.2.0', '2.3.0'] as const
+// '1.0' is what Yhtua v1 wrote into its backups — still importable.
+const SUPPORTED_BACKUP_VERSIONS = ['1.0', '1.0.0', '2.0.0', '2.1.0', '2.2.0', '2.3.0'] as const
 const BASE32_PADDING_BY_REMAINDER = [0, undefined, 6, undefined, 4, 3, undefined, 1] as const
 const BASE32_UNUSED_BITS_BY_REMAINDER = [0, undefined, 2, undefined, 4, 1, undefined, 3] as const
 
@@ -48,11 +49,20 @@ export const CURRENT_STORE_VERSION = StoreVersion.V2_ENCRYPTED
 
 const timestampSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 
+// Older backups stored the algorithm as a free-form string ("sha1", "SHA-256").
+// Bounded before the transform: every other string field here is capped, and an
+// unbounded input would be rewritten and upper-cased before the enum rejects it.
+const algorithmSchema = z
+  .string()
+  .max(16)
+  .transform((value) => value.replace(/-/g, '').toUpperCase())
+  .pipe(z.enum(['SHA1', 'SHA256', 'SHA512']))
+
 const otpSchema = z
   .object({
-    issuer: z.string().trim().max(MAX_LABEL_LENGTH),
+    issuer: z.string().trim().max(MAX_LABEL_LENGTH).optional().default(''),
     label: z.string().trim().min(1).max(MAX_LABEL_LENGTH),
-    algorithm: z.enum(['SHA1', 'SHA256', 'SHA512']),
+    algorithm: algorithmSchema.optional().default('SHA1'),
     digits: z.number().int().min(6).max(8).optional().default(DEFAULT_DIGITS),
     period: z.number().int().min(15).max(300).optional().default(DEFAULT_PERIOD),
     secret: z.string().min(1).max(MAX_ENCRYPTED_SECRET_LENGTH),
@@ -245,16 +255,37 @@ export const updateTokenLastUsed = (tokenId: string) => {
 
 export const storeAddToken = (token: Token | Token[]) => {
   const tokens = Array.isArray(token) ? token : [token]
-  const currentTokens = store.getState().tokens
+  const state = store.getState()
+  const currentTokens = state.tokens
   const seen = new Set(currentTokens.map(({ id }) => id))
-  const validTokens = tokens
-    .filter((token) => {
-      if (!tokenSchema.safeParse(token).success || seen.has(token.id)) return false
-      seen.add(token.id)
-      return true
-    })
-    .slice(0, Math.max(0, MAX_TOKENS - currentTokens.length))
-  store.setState({ tokens: [...currentTokens, ...validTokens] })
+  const capacity = Math.max(0, MAX_TOKENS - currentTokens.length)
+  const tombstonesById = new Map(state.tombstones.map((tombstone) => [tombstone.id, tombstone]))
+  const now = Date.now()
+
+  const validTokens: Token[] = []
+  for (const token of tokens) {
+    if (validTokens.length >= capacity) break
+    // Store the parsed result, not the input: that is what upgrades legacy
+    // fields (loose algorithm casing, missing issuer) to the current shape.
+    const parsed = tokenSchema.safeParse(token)
+    if (!parsed.success || seen.has(parsed.data.id)) continue
+    seen.add(parsed.data.id)
+
+    // Backups keep token ids, so re-adding one you previously deleted collides
+    // with its tombstone. Adding is an explicit resurrection: drop the tombstone
+    // and date the token past the deletion, or mergePersistedStore wipes it on
+    // the next load and the next sync deletes it again.
+    if (tombstonesById.delete(parsed.data.id)) {
+      validTokens.push({ ...parsed.data, updatedAt: Math.max(parsed.data.updatedAt ?? 0, now) })
+      continue
+    }
+    validTokens.push(parsed.data)
+  }
+
+  store.setState({
+    tokens: [...currentTokens, ...validTokens],
+    tombstones: [...tombstonesById.values()],
+  })
   return validTokens.length
 }
 
