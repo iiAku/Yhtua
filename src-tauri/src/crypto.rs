@@ -10,6 +10,7 @@ use std::{
     fs,
     num::NonZeroU32,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
 };
 use thiserror::Error;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
@@ -57,6 +58,8 @@ pub enum CryptoError {
     InvalidPassword,
     #[error("Storage operation failed")]
     Storage,
+    #[error("Internal error")]
+    Internal,
 }
 
 impl serde::Serialize for CryptoError {
@@ -109,25 +112,69 @@ fn legacy_fallback_encryption_key() -> Zeroizing<[u8; KEY_LEN]> {
     ))
 }
 
-fn read_legacy_fallback_credentials() -> Result<Option<LegacyFallbackCredentials>, CryptoError> {
-    let path = legacy_fallback_path()?;
+/// Set once the legacy credential file has been found unusable, so the 600k-round
+/// PBKDF2 derivation behind that verdict is not repeated on every credential
+/// lookup that falls through to migration.
+static LEGACY_FALLBACK_UNUSABLE: AtomicBool = AtomicBool::new(false);
+
+/// Reads the pre-2.7.1 credential file, if one is still readable.
+///
+/// This file is an optional upgrade path, so every failure to read it means
+/// "nothing to migrate" rather than an error. It is keyed by username+hostname
+/// (`legacy_fallback_encryption_key`), so renaming the machine makes it
+/// permanently undecryptable — and propagating that failure used to poison every
+/// credential lookup that fell through to migration, leaving the app unable to
+/// read *or create* its encryption key. The file is left on disk: it may become
+/// readable again if the original hostname comes back.
+fn read_legacy_fallback_credentials() -> Option<LegacyFallbackCredentials> {
+    if LEGACY_FALLBACK_UNUSABLE.load(Ordering::Relaxed) {
+        return None;
+    }
+
+    let path = legacy_fallback_path().ok()?;
     if !path.exists() {
-        return Ok(None);
+        return None;
     }
 
-    let metadata = fs::symlink_metadata(&path).map_err(|_| CryptoError::Storage)?;
+    let metadata = fs::symlink_metadata(&path).ok()?;
     if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-        return Err(CryptoError::Storage);
+        log::warn!("Ignoring a legacy credential path that is not a regular file");
+        LEGACY_FALLBACK_UNUSABLE.store(true, Ordering::Relaxed);
+        return None;
     }
 
-    let encrypted = fs::read_to_string(&path).map_err(|_| CryptoError::Storage)?;
+    let encrypted = fs::read_to_string(&path).ok()?;
+    let credentials = decode_legacy_fallback_credentials(&encrypted);
+    if credentials.is_none() {
+        LEGACY_FALLBACK_UNUSABLE.store(true, Ordering::Relaxed);
+    }
+    credentials
+}
+
+/// Split from the file read so it can be tested without touching the real
+/// credential file, which lives in the user's data directory.
+fn decode_legacy_fallback_credentials(encrypted: &str) -> Option<LegacyFallbackCredentials> {
     if encrypted.len() > MAX_CIPHERTEXT_BASE64_BYTES {
-        return Err(CryptoError::InputTooLarge);
+        log::warn!("Ignoring an oversized legacy credential file");
+        return None;
     }
     let key = legacy_fallback_encryption_key();
-    let decrypted = Zeroizing::new(decrypt_local_legacy(&encrypted, key.as_ref())?);
-    let credentials = serde_json::from_str(&decrypted).map_err(|_| CryptoError::InvalidFormat)?;
-    Ok(Some(credentials))
+    let decrypted = match decrypt_local_legacy(encrypted, key.as_ref()) {
+        Ok(decrypted) => Zeroizing::new(decrypted),
+        Err(_) => {
+            log::warn!(
+                "Legacy credential file cannot be decrypted on this device (the machine name may have changed); skipping migration"
+            );
+            return None;
+        }
+    };
+    match serde_json::from_str(&decrypted) {
+        Ok(credentials) => Some(credentials),
+        Err(_) => {
+            log::warn!("Legacy credential file is malformed; skipping migration");
+            None
+        }
+    }
 }
 
 fn keyring_entry(service: &str, name: &str) -> Result<Entry, CryptoError> {
@@ -185,7 +232,7 @@ impl CredentialBackend for OsCredentialBackend {
 }
 
 fn migrate_legacy_credentials<B: CredentialBackend>(backend: &B) -> Result<bool, CryptoError> {
-    let Some(credentials) = read_legacy_fallback_credentials()? else {
+    let Some(credentials) = read_legacy_fallback_credentials() else {
         return Ok(false);
     };
 
@@ -237,10 +284,16 @@ fn get_credential_with<B: CredentialBackend>(
         return Ok(Some(value));
     }
 
-    if migrate_legacy_credentials(backend)?
-        && let Some(value) = backend.get(KEYCHAIN_SERVICE, name)?
-    {
-        return Ok(Some(value));
+    // Migration is opportunistic. A failure here means we could not import old
+    // credentials — never that the caller may not read or create current ones.
+    match migrate_legacy_credentials(backend) {
+        Ok(true) => {
+            if let Some(value) = backend.get(KEYCHAIN_SERVICE, name)? {
+                return Ok(Some(value));
+            }
+        }
+        Ok(false) => {}
+        Err(error) => log::warn!("Legacy credential migration failed: {error}"),
     }
     Ok(None)
 }
@@ -505,8 +558,7 @@ pub(crate) fn fuzz_local_ciphertext(data: &[u8]) {
     }
 }
 
-#[tauri::command]
-pub fn has_encryption_key() -> Result<bool, CryptoError> {
+fn has_encryption_key_blocking() -> Result<bool, CryptoError> {
     has_credential(KEYCHAIN_KEY_NAME)
 }
 
@@ -514,34 +566,47 @@ fn get_encryption_key() -> Result<Zeroizing<String>, CryptoError> {
     get_credential(KEYCHAIN_KEY_NAME)?.ok_or(CryptoError::MissingEncryptionKey)
 }
 
-#[tauri::command]
-pub fn ensure_encryption_key() -> Result<bool, CryptoError> {
+fn ensure_encryption_key_blocking() -> Result<bool, CryptoError> {
     if has_credential(KEYCHAIN_KEY_NAME)? {
         return Ok(false);
     }
+
+    // has_credential already tried to migrate. Reaching here with a legacy file
+    // that still yields a key means that migration failed to write — minting a
+    // fresh key now would orphan the real one and make every existing token
+    // permanently unreadable. Fail loudly so the next attempt can migrate.
+    if legacy_fallback_holds_encryption_key() {
+        log::error!(
+            "Refusing to create an encryption key while an unmigrated legacy key is present"
+        );
+        return Err(CryptoError::Keychain);
+    }
+
     let key = Zeroizing::new(random_bytes::<KEY_LEN>()?);
     let encoded = Zeroizing::new(BASE64.encode(key.as_ref()));
     store_credential(KEYCHAIN_KEY_NAME, &encoded)?;
     Ok(true)
 }
 
-#[tauri::command]
-pub fn reset_encryption_key() -> Result<(), CryptoError> {
+fn legacy_fallback_holds_encryption_key() -> bool {
+    read_legacy_fallback_credentials()
+        .is_some_and(|credentials| credentials.encryption_key.is_some())
+}
+
+fn reset_encryption_key_blocking() -> Result<(), CryptoError> {
     let key = Zeroizing::new(random_bytes::<KEY_LEN>()?);
     let encoded = Zeroizing::new(BASE64.encode(key.as_ref()));
     rotate_encryption_key_with(&OsCredentialBackend, &encoded)
 }
 
-#[tauri::command]
-pub fn encrypt_with_keychain_key(plaintext: String) -> Result<String, CryptoError> {
+fn encrypt_with_keychain_key_blocking(plaintext: String) -> Result<String, CryptoError> {
     let encoded = get_encryption_key()?;
     let key = decode_key(&encoded)?;
     let plaintext = Zeroizing::new(plaintext);
     encrypt_local(&plaintext, key.as_ref())
 }
 
-#[tauri::command]
-pub fn decrypt_with_keychain_key(ciphertext_base64: String) -> Result<String, CryptoError> {
+fn decrypt_with_keychain_key_blocking(ciphertext_base64: String) -> Result<String, CryptoError> {
     let encoded = get_encryption_key()?;
     let key = decode_key(&encoded)?;
     decrypt_local(&ciphertext_base64, key.as_ref())
@@ -589,15 +654,16 @@ fn decrypt_with_password_bytes(
     }
 }
 
-#[tauri::command]
-pub fn encrypt_with_password(plaintext: String, password: String) -> Result<String, CryptoError> {
+fn encrypt_with_password_blocking(
+    plaintext: String,
+    password: String,
+) -> Result<String, CryptoError> {
     let plaintext = Zeroizing::new(plaintext);
     let password = Zeroizing::new(password);
     encrypt_with_password_bytes(plaintext.as_bytes(), password.as_bytes())
 }
 
-#[tauri::command]
-pub fn decrypt_with_password(
+fn decrypt_with_password_blocking(
     ciphertext_base64: String,
     password: String,
 ) -> Result<String, CryptoError> {
@@ -609,21 +675,18 @@ fn get_sync_password() -> Result<Zeroizing<String>, CryptoError> {
     get_credential(KEYCHAIN_SYNC_PASSWORD)?.ok_or(CryptoError::Keychain)
 }
 
-#[tauri::command]
-pub fn encrypt_with_sync_password(plaintext: String) -> Result<String, CryptoError> {
+fn encrypt_with_sync_password_blocking(plaintext: String) -> Result<String, CryptoError> {
     let plaintext = Zeroizing::new(plaintext);
     let password = get_sync_password()?;
     encrypt_with_password_bytes(plaintext.as_bytes(), password.as_bytes())
 }
 
-#[tauri::command]
-pub fn decrypt_with_sync_password(ciphertext_base64: String) -> Result<String, CryptoError> {
+fn decrypt_with_sync_password_blocking(ciphertext_base64: String) -> Result<String, CryptoError> {
     let password = get_sync_password()?;
     decrypt_with_password_bytes(&ciphertext_base64, password.as_bytes())
 }
 
-#[tauri::command]
-pub fn store_sync_password(password: String) -> Result<(), CryptoError> {
+fn store_sync_password_blocking(password: String) -> Result<(), CryptoError> {
     let password = Zeroizing::new(password);
     if !(8..=MAX_PASSWORD_BYTES).contains(&password.len()) {
         return Err(CryptoError::InvalidPassword);
@@ -631,8 +694,7 @@ pub fn store_sync_password(password: String) -> Result<(), CryptoError> {
     store_credential(KEYCHAIN_SYNC_PASSWORD, &password)
 }
 
-#[tauri::command]
-pub fn migrate_legacy_frontend_credentials(
+fn migrate_legacy_frontend_credentials_blocking(
     encryption_key: Option<String>,
     sync_password: Option<String>,
     sync_path: Option<String>,
@@ -672,13 +734,11 @@ pub fn migrate_legacy_frontend_credentials(
     Ok(())
 }
 
-#[tauri::command]
-pub fn has_sync_password() -> Result<bool, CryptoError> {
+fn has_sync_password_blocking() -> Result<bool, CryptoError> {
     has_credential(KEYCHAIN_SYNC_PASSWORD)
 }
 
-#[tauri::command]
-pub fn delete_sync_password() -> Result<(), CryptoError> {
+fn delete_sync_password_blocking() -> Result<(), CryptoError> {
     delete_credential(KEYCHAIN_SYNC_PASSWORD)
 }
 
@@ -698,27 +758,140 @@ pub(crate) fn get_sync_directory() -> Result<PathBuf, CryptoError> {
     Ok(path)
 }
 
-#[tauri::command]
-pub fn store_sync_path(path: String) -> Result<(), CryptoError> {
+fn store_sync_path_blocking(path: String) -> Result<(), CryptoError> {
     validate_sync_path(&path)?;
     store_credential(KEYCHAIN_SYNC_PATH, &path)
 }
 
-#[tauri::command]
-pub fn get_sync_path() -> Result<String, CryptoError> {
+fn get_sync_path_blocking() -> Result<String, CryptoError> {
     get_credential(KEYCHAIN_SYNC_PATH)?
         .map(|value| value.to_string())
         .ok_or(CryptoError::Keychain)
 }
 
-#[tauri::command]
-pub fn has_sync_path() -> Result<bool, CryptoError> {
+fn has_sync_path_blocking() -> Result<bool, CryptoError> {
     has_credential(KEYCHAIN_SYNC_PATH)
 }
 
-#[tauri::command]
-pub fn delete_sync_path() -> Result<(), CryptoError> {
+fn delete_sync_path_blocking() -> Result<(), CryptoError> {
     delete_credential(KEYCHAIN_SYNC_PATH)
+}
+
+/// Tauri runs synchronous commands on the main thread. Everything below touches
+/// the OS credential store or runs a deliberately expensive KDF (Argon2id at
+/// 64 MiB, PBKDF2 at 600k rounds), so running it there froze the UI for the
+/// duration of every crypto call. Offload it like files.rs already does.
+async fn offload<T, F>(work: F) -> Result<T, CryptoError>
+where
+    F: FnOnce() -> Result<T, CryptoError> + Send + 'static,
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| {
+            // A join failure means the worker panicked or was cancelled — not that
+            // the credential store failed, which is what Storage would imply.
+            log::error!("A crypto worker task failed to complete: {error}");
+            CryptoError::Internal
+        })?
+}
+
+#[tauri::command]
+pub async fn has_encryption_key() -> Result<bool, CryptoError> {
+    offload(has_encryption_key_blocking).await
+}
+
+#[tauri::command]
+pub async fn ensure_encryption_key() -> Result<bool, CryptoError> {
+    offload(ensure_encryption_key_blocking).await
+}
+
+#[tauri::command]
+pub async fn reset_encryption_key() -> Result<(), CryptoError> {
+    offload(reset_encryption_key_blocking).await
+}
+
+#[tauri::command]
+pub async fn encrypt_with_keychain_key(plaintext: String) -> Result<String, CryptoError> {
+    offload(move || encrypt_with_keychain_key_blocking(plaintext)).await
+}
+
+#[tauri::command]
+pub async fn decrypt_with_keychain_key(ciphertext_base64: String) -> Result<String, CryptoError> {
+    offload(move || decrypt_with_keychain_key_blocking(ciphertext_base64)).await
+}
+
+#[tauri::command]
+pub async fn encrypt_with_password(
+    plaintext: String,
+    password: String,
+) -> Result<String, CryptoError> {
+    offload(move || encrypt_with_password_blocking(plaintext, password)).await
+}
+
+#[tauri::command]
+pub async fn decrypt_with_password(
+    ciphertext_base64: String,
+    password: String,
+) -> Result<String, CryptoError> {
+    offload(move || decrypt_with_password_blocking(ciphertext_base64, password)).await
+}
+
+#[tauri::command]
+pub async fn encrypt_with_sync_password(plaintext: String) -> Result<String, CryptoError> {
+    offload(move || encrypt_with_sync_password_blocking(plaintext)).await
+}
+
+#[tauri::command]
+pub async fn decrypt_with_sync_password(ciphertext_base64: String) -> Result<String, CryptoError> {
+    offload(move || decrypt_with_sync_password_blocking(ciphertext_base64)).await
+}
+
+#[tauri::command]
+pub async fn store_sync_password(password: String) -> Result<(), CryptoError> {
+    offload(move || store_sync_password_blocking(password)).await
+}
+
+#[tauri::command]
+pub async fn migrate_legacy_frontend_credentials(
+    encryption_key: Option<String>,
+    sync_password: Option<String>,
+    sync_path: Option<String>,
+) -> Result<(), CryptoError> {
+    offload(move || {
+        migrate_legacy_frontend_credentials_blocking(encryption_key, sync_password, sync_path)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn has_sync_password() -> Result<bool, CryptoError> {
+    offload(has_sync_password_blocking).await
+}
+
+#[tauri::command]
+pub async fn delete_sync_password() -> Result<(), CryptoError> {
+    offload(delete_sync_password_blocking).await
+}
+
+#[tauri::command]
+pub async fn store_sync_path(path: String) -> Result<(), CryptoError> {
+    offload(move || store_sync_path_blocking(path)).await
+}
+
+#[tauri::command]
+pub async fn get_sync_path() -> Result<String, CryptoError> {
+    offload(get_sync_path_blocking).await
+}
+
+#[tauri::command]
+pub async fn has_sync_path() -> Result<bool, CryptoError> {
+    offload(has_sync_path_blocking).await
+}
+
+#[tauri::command]
+pub async fn delete_sync_path() -> Result<(), CryptoError> {
+    offload(delete_sync_path_blocking).await
 }
 
 #[cfg(test)]
@@ -779,6 +952,29 @@ mod tests {
         assert!(matches!(
             get_credential_with(&backend, KEYCHAIN_KEY_NAME),
             Err(CryptoError::Keychain)
+        ));
+    }
+
+    #[test]
+    fn an_undecryptable_legacy_credential_file_is_ignored() {
+        // Keyed by username+hostname, so renaming the machine makes this file
+        // permanently undecryptable. It must decode as "nothing to migrate" —
+        // propagating the failure previously blocked every credential lookup,
+        // which left the app unable to create an encryption key at all.
+        // Deliberately does not touch the real file: it holds live credentials.
+        assert!(decode_legacy_fallback_credentials("not-a-valid-ciphertext").is_none());
+        assert!(decode_legacy_fallback_credentials("").is_none());
+        assert!(decode_legacy_fallback_credentials(&"x".repeat(1024)).is_none());
+    }
+
+    #[test]
+    fn an_unusable_legacy_file_still_allows_credential_lookups() {
+        // Whatever the legacy file is doing, a lookup must report "no credential"
+        // rather than an error, so ensure_encryption_key can go on to create one.
+        let backend = MemoryCredentialBackend::default();
+        assert!(matches!(
+            get_credential_with(&backend, KEYCHAIN_KEY_NAME),
+            Ok(None)
         ));
     }
 
