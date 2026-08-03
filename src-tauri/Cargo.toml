@@ -1,6 +1,6 @@
 [package]
 name = "yhtua"
-version = "2.8.1"
+version = "2.8.2"
 description = "Open-source encrypted TOTP token manager for desktop"
 authors = ["Yoann Gendrey <yoann@gendrey.fr>"]
 license = "MIT"

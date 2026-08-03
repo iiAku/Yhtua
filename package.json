@@ -1,6 +1,6 @@
 {
   "name": "Yhtua",
-  "version": "2.8.1",
+  "version": "2.8.2",
   "private": true,
   "description": "Open-source encrypted TOTP token manager for desktop",
   "homepage": "https://iiaku.github.io/Yhtua/",

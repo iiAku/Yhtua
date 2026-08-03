@@ -4,6 +4,27 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ## [Unreleased]
 
+## [2.8.2] - 2026-08-03
+
+### Fixed
+
+- Fixed credential recovery so an unreadable pre-2.7.1 credential file no longer blocks every credential lookup. That file is keyed to the machine name, so renaming the device made it permanently undecryptable, and propagating the failure left the application unable to read _or create_ its encryption key — every backup import ended in "Decryption failed". Reading it is now best-effort, and the encryption key is never replaced while a readable legacy key still awaits migration.
+- Fixed the import, export, sync-recovery and token-import dialogs, which never rendered at all because they were missing the `open` state Headless UI requires.
+- Fixed import of backups written by earlier releases: version `1.0`, free-form algorithm casing and a missing issuer are accepted again, and imported tokens are converted to the current schema and re-encrypted on the way in.
+- Fixed import and sync restore rejecting valid backups over the vestigial `hmac` field written before 2.7.1, which had made existing remote backups unreadable.
+- Fixed imported tokens disappearing after a reload when the same identifiers had previously been deleted; adding a token now clears its tombstone instead of colliding with it.
+- Fixed import and export reporting nothing at all: failures appear inline in the dialog, the underlying error from the operating system is shown instead of being discarded, and notifications are no longer drawn beneath the open dialog.
+- Fixed the copy action leaving the clipboard empty. The automatic clear ran 500 ms after the copy and again whenever the window was hidden or the page left, which is exactly when a code is being pasted.
+
+### Changed
+
+- The clipboard now retains a copied code for 30 seconds, cleared by a timer alone, and ownership is tracked by fingerprint so a code is no longer held in memory after leaving the page.
+- Importing no longer asks for confirmation. It only ever adds tokens, and the browser-level prompt is unreliable in the Linux webview. Destructive confirmations use the in-application dialog instead.
+
+### Performance
+
+- Moved every cryptographic command off the main thread. Argon2id key derivation and credential-store access previously blocked the interface for the duration of each call, and the legacy key derivation was repeated on every lookup.
+
 ## [2.8.1] - 2026-07-31
 
 ### Build/Release
@@ -49,6 +70,7 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 - Added frozen installs, version consistency gates, RustSec/cargo-deny policy, SBOM/checksum preparation, and hardened automation.
 
-[Unreleased]: https://github.com/iiAku/Yhtua/compare/v2.8.1...HEAD
+[Unreleased]: https://github.com/iiAku/Yhtua/compare/v2.8.2...HEAD
+[2.8.2]: https://github.com/iiAku/Yhtua/compare/v2.8.1...v2.8.2
 [2.8.1]: https://github.com/iiAku/Yhtua/compare/549dfb95f7703d54678a9ca1cb1a96f5d8f08c41...v2.8.1
 [2.8.0]: https://github.com/iiAku/Yhtua/compare/v2.7.2...549dfb95f7703d54678a9ca1cb1a96f5d8f08c41
