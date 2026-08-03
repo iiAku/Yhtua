@@ -9,14 +9,22 @@ import {
   initializeEncryption,
 } from './useCrypto'
 
-const encryptedExportSchema = z
-  .object({
-    version: z.enum(['2.0.0', '2.1.0', '2.2.0', '2.3.0']),
-    encrypted: z.literal(true),
-    syncedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
-    data: z.string().min(1).max(MAX_ENCRYPTED_BACKUP_BYTES),
-  })
-  .strict()
+const timestampSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
+
+// The envelope is unauthenticated metadata — only `data` is bound to the password
+// by AEAD. So any file that merely looks encrypted earns a decryption attempt,
+// and the strict validation that guards the store runs on the decrypted payload.
+// Not .strict(): pre-2.7.1 backups carry a vestigial `hmac` key, and rejecting
+// them outright sent an encrypted file to the plaintext parser, which then
+// reported a nonsense error instead of asking for the password.
+// Sync binds envelope metadata to the payload separately (useSync.ts) because it
+// acts on `syncedAt`; a manual import reads nothing but `data`.
+const encryptedEnvelopeSchema = z.object({
+  version: z.string().max(32).optional(),
+  encrypted: z.literal(true),
+  syncedAt: timestampSchema.optional(),
+  data: z.string().min(1).max(MAX_ENCRYPTED_BACKUP_BYTES),
+})
 
 const parseAndValidate = <T extends z.ZodType>(
   jsonString: string,
@@ -31,12 +39,69 @@ const parseAndValidate = <T extends z.ZodType>(
   }
 }
 
+// Zod issues carry the field path and rule, never the value — safe to show.
+const describeIssues = (error: z.ZodError | undefined): string => {
+  const issue = error?.issues[0]
+  if (!issue) return 'Invalid token file format'
+  const field = issue.path.join('.')
+  return field ? `Invalid backup: ${field} — ${issue.message}` : `Invalid backup: ${issue.message}`
+}
+
+// A rejected `invoke` yields the serialized Rust error as a plain string, not an
+// Error — so `instanceof Error` alone silently swallowed every reason the OS gave
+// us ("Encryption key is missing", "Secure credential storage is unavailable")
+// and replaced it with a generic fallback.
+const describeError = (error: unknown, fallback: string): string => {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string' && error.trim()) return error
+  return fallback
+}
+
 const pickBackupFile = (): Promise<string | null> => invoke<string | null>('pick_backup_file')
 
 const saveBackupFile = (content: string): Promise<boolean> =>
   invoke<boolean>('save_backup_file', { content })
 
-type EncryptedExport = z.infer<typeof encryptedExportSchema>
+type EncryptedExport = z.infer<typeof encryptedEnvelopeSchema>
+
+// Every import/export path returns one of these instead of notifying itself, so
+// the page decides where feedback belongs — inline in the modal for failures the
+// user can act on, a toast once the modal is gone.
+export type BackupResult = {
+  success: boolean
+  cancelled?: boolean
+  error?: string
+  tokensCount?: number
+  legacy?: boolean
+  needsPassword?: boolean
+}
+
+// Tokens arrive here already parsed into the current shape; this completes the
+// conversion by encrypting each secret with the device key and stamping
+// `updatedAt`, which legacy backups predate and sync merging relies on.
+//
+// No confirmation prompt: importing only ever adds (storeAddToken skips ids that
+// already exist and never overwrites), so there is nothing to guard — and
+// window.confirm is unreliable in a WebKitGTK webview, where a false return
+// would abort the import with no visible reason at all.
+const addImportedTokens = async (tokens: Token[]): Promise<number> => {
+  await initializeEncryption()
+
+  const now = Date.now()
+  const converted = await Promise.all(
+    tokens.map(async (token) => ({
+      ...token,
+      updatedAt: token.updatedAt ?? now,
+      otp: {
+        ...token.otp,
+        secret: await encryptSecret(token.otp.secret),
+        encrypted: true,
+      },
+    })),
+  )
+
+  return storeAddToken(converted)
+}
 
 let pendingEncryptedBackup: EncryptedExport | null = null
 
@@ -46,9 +111,7 @@ export const clearPendingEncryptedImport = (): void => {
   pendingEncryptedBackup = null
 }
 
-export const completePendingEncryptedImport = async (
-  password: string,
-): Promise<{ success: boolean; cancelled?: boolean; error?: string; tokensCount?: number }> => {
+export const completePendingEncryptedImport = async (password: string): Promise<BackupResult> => {
   const pending = pendingEncryptedBackup
   if (!pending) return { success: false, error: 'No pending import' }
 
@@ -61,41 +124,18 @@ export const completePendingEncryptedImport = async (
   }
 
   const validationResult = plaintextBackupSchema.safeParse(decryptedData)
-  if (!validationResult.success || !portableBackupMetadataMatches(pending, validationResult.data)) {
-    return { success: false, error: 'Invalid backup data structure' }
+  if (!validationResult.success) {
+    return { success: false, error: describeIssues(validationResult.error) }
   }
-
-  const tokenCount = validationResult.data.tokens.length
-  const existingCount = getTokens().length
-  if (
-    existingCount > 0 &&
-    !confirm(`Import ${tokenCount} tokens? You currently have ${existingCount} tokens.`)
-  ) {
-    return { success: false, cancelled: true }
-  }
-
   try {
-    await initializeEncryption()
-
-    const reEncryptedTokens = await Promise.all(
-      validationResult.data.tokens.map(async (token: Token) => ({
-        ...token,
-        otp: {
-          ...token.otp,
-          secret: await encryptSecret(token.otp.secret),
-          encrypted: true,
-        },
-      })),
-    )
-
-    const importedCount = storeAddToken(reEncryptedTokens)
+    const importedCount = await addImportedTokens(validationResult.data.tokens)
     if (pendingEncryptedBackup === pending) pendingEncryptedBackup = null
 
     return { success: true, tokensCount: importedCount }
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Encryption error',
+      error: describeError(error, 'Encryption error'),
     }
   }
 }
@@ -107,10 +147,7 @@ const getPlaintextSecret = async (token: Token): Promise<string> => {
   return token.otp.secret
 }
 
-export const exportTokensEncrypted = async (
-  notification: Ref<AppNotification>,
-  password: string,
-): Promise<boolean> => {
+export const exportTokensEncrypted = async (password: string): Promise<BackupResult> => {
   try {
     const tokens = getTokens()
     const decryptedTokens = await Promise.all(
@@ -140,238 +177,105 @@ export const exportTokensEncrypted = async (
     }
 
     if (!(await saveBackupFile(JSON.stringify(encryptedBackup, null, 2)))) {
-      return false
+      return { success: false, cancelled: true }
     }
-    await useShowNotification(notification, {
-      text: 'Tokens exported with encryption',
-      delay: 1500,
-    })
-    return true
+    return { success: true, tokensCount: tokens.length }
   } catch (error) {
     console.error('Export error:', error)
-    await useShowNotification(notification, {
-      text: 'Error while exporting tokens',
-      delay: 1500,
-      type: NotificationType.Danger,
-    })
-    return false
+    return {
+      success: false,
+      error: describeError(error, 'Error while exporting tokens'),
+    }
   }
 }
 
-export const importTokensEncrypted = async (
-  notification: Ref<AppNotification>,
-  password: string,
-  navigateToHome?: boolean,
-): Promise<boolean> => {
+export const importTokensEncrypted = async (password: string): Promise<BackupResult> => {
   try {
     const jsonContent = await pickBackupFile()
     if (jsonContent === null) {
-      return false
+      return { success: false, cancelled: true }
     }
 
     const encryptedResult = parseAndValidate(
       jsonContent,
-      encryptedExportSchema,
+      encryptedEnvelopeSchema,
       MAX_ENCRYPTED_BACKUP_BYTES,
     )
 
     if (encryptedResult.success) {
+      let decryptedData: unknown
       try {
-        const decryptedJson = await decryptWithPassword(encryptedResult.data.data, password)
-        const decryptedData = parseBoundedJson(decryptedJson)
-
-        const validationResult = plaintextBackupSchema.safeParse(decryptedData)
-        if (
-          !validationResult.success ||
-          !portableBackupMetadataMatches(encryptedResult.data, validationResult.data)
-        ) {
-          await useShowNotification(notification, {
-            text: 'Invalid backup data structure',
-            delay: 2000,
-            type: NotificationType.Danger,
-          })
-          return false
-        }
-
-        const tokenCount = validationResult.data.tokens.length
-        const existingCount = getTokens().length
-        if (
-          existingCount > 0 &&
-          !confirm(`Import ${tokenCount} tokens? You currently have ${existingCount} tokens.`)
-        ) {
-          return false
-        }
-
-        await initializeEncryption()
-
-        const reEncryptedTokens = await Promise.all(
-          validationResult.data.tokens.map(async (token: Token) => ({
-            ...token,
-            otp: {
-              ...token.otp,
-              secret: await encryptSecret(token.otp.secret),
-              encrypted: true,
-            },
-          })),
+        // BOUNDARY: decryption is the password check — only failures here mean
+        // the password was wrong, so nothing else belongs inside this catch.
+        decryptedData = parseBoundedJson(
+          await decryptWithPassword(encryptedResult.data.data, password),
         )
-
-        const importedCount = storeAddToken(reEncryptedTokens)
-
-        await useShowNotification(notification, {
-          text: `${importedCount} tokens imported`,
-          delay: 1500,
-        })
-
-        if (navigateToHome) {
-          navigateTo('/')
-        }
-        return true
       } catch {
-        await useShowNotification(notification, {
-          text: 'Wrong password or corrupted file',
-          delay: 2000,
-          type: NotificationType.Danger,
-        })
-        return false
+        return { success: false, error: 'Wrong password or corrupted file' }
       }
+
+      const validationResult = plaintextBackupSchema.safeParse(decryptedData)
+      if (!validationResult.success) {
+        return { success: false, error: describeIssues(validationResult.error) }
+      }
+
+      const importedCount = await addImportedTokens(validationResult.data.tokens)
+      return { success: true, tokensCount: importedCount }
     }
 
+    // Not encrypted — an unencrypted export from any supported release.
     const legacyResult = parseAndValidate(jsonContent, plaintextBackupSchema)
 
     if (legacyResult.success) {
-      const tokenCount = legacyResult.data.tokens.length
-      const existingCount = getTokens().length
-      if (
-        existingCount > 0 &&
-        !confirm(`Import ${tokenCount} tokens? You currently have ${existingCount} tokens.`)
-      ) {
-        return false
-      }
-
-      await initializeEncryption()
-
-      const reEncryptedTokens = await Promise.all(
-        legacyResult.data.tokens.map(async (token: Token) => ({
-          ...token,
-          otp: {
-            ...token.otp,
-            secret: await encryptSecret(token.otp.secret),
-            encrypted: true,
-          },
-        })),
-      )
-
-      const importedCount = storeAddToken(reEncryptedTokens)
-
-      await useShowNotification(notification, {
-        text: `${importedCount} tokens imported (legacy format)`,
-        delay: 1500,
-      })
-
-      if (navigateToHome) {
-        navigateTo('/')
-      }
-      return true
+      const importedCount = await addImportedTokens(legacyResult.data.tokens)
+      return { success: true, tokensCount: importedCount, legacy: true }
     }
 
     console.error('Import validation error:', legacyResult.error?.issues)
-    await useShowNotification(notification, {
-      text: 'Invalid token file format',
-      delay: 1500,
-      type: NotificationType.Danger,
-    })
-    return false
-  } catch (err) {
-    console.error('Import error:', err)
-    await useShowNotification(notification, {
-      text: 'Error while importing tokens',
-      delay: 1500,
-      type: NotificationType.Danger,
-    })
-    return false
+    return { success: false, error: describeIssues(legacyResult.error) }
+  } catch (error) {
+    console.error('Import error:', error)
+    return {
+      success: false,
+      error: describeError(error, 'Error while importing tokens'),
+    }
   }
 }
 
-export const importTokens = async (
-  notification: Ref<AppNotification>,
-  navigateToHome?: boolean,
-) => {
+export const importTokens = async (): Promise<BackupResult> => {
   try {
     const jsonContent = await pickBackupFile()
     if (jsonContent === null) {
-      return
+      return { success: false, cancelled: true }
     }
 
-    // Detect encrypted backup (sync or export) — return for caller to handle password
+    // Encrypted backup (manual export or sync file) — the caller collects the
+    // password and finishes through completePendingEncryptedImport.
     const encryptedResult = parseAndValidate(
       jsonContent,
-      encryptedExportSchema,
+      encryptedEnvelopeSchema,
       MAX_ENCRYPTED_BACKUP_BYTES,
     )
     if (encryptedResult.success) {
       pendingEncryptedBackup = encryptedResult.data
-      return
+      return { success: false, needsPassword: true }
     }
 
-    // Unencrypted backup
     const result = parseAndValidate(jsonContent, plaintextBackupSchema)
 
     if (!result.success) {
       console.error('Import validation error:', result.error.issues)
-      await useShowNotification(notification, {
-        text: 'Invalid token file format',
-        delay: 1500,
-        type: NotificationType.Danger,
-      })
-      return
+      return { success: false, error: describeIssues(result.error) }
     }
 
-    const tokenCount = result.data.tokens.length
-    const existingCount = getTokens().length
-    if (
-      existingCount > 0 &&
-      !confirm(`Import ${tokenCount} tokens? You currently have ${existingCount} tokens.`)
-    ) {
-      return
+    const importedCount = await addImportedTokens(result.data.tokens)
+    return { success: true, tokensCount: importedCount }
+  } catch (error) {
+    console.error('Import error:', error)
+    return {
+      success: false,
+      error: describeError(error, 'Error while importing tokens'),
     }
-
-    await initializeEncryption()
-
-    const reEncryptedTokens = await Promise.all(
-      result.data.tokens.map(async (token: Token) => {
-        try {
-          const encryptedSecret = await encryptSecret(token.otp.secret)
-          return {
-            ...token,
-            otp: {
-              ...token.otp,
-              secret: encryptedSecret,
-              encrypted: true,
-            },
-          }
-        } catch (encryptError) {
-          console.error(`Failed to encrypt token ${token.id}:`, encryptError)
-          throw encryptError
-        }
-      }),
-    )
-
-    const importedCount = storeAddToken(reEncryptedTokens)
-
-    await useShowNotification(notification, {
-      text: `${importedCount} tokens imported`,
-      delay: 1500,
-    })
-    if (navigateToHome) {
-      navigateTo('/')
-    }
-  } catch (err) {
-    console.error('Import error:', err)
-    await useShowNotification(notification, {
-      text: 'Error while importing tokens',
-      delay: 1500,
-      type: NotificationType.Danger,
-    })
   }
 }
 

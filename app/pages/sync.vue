@@ -13,6 +13,7 @@
     <!-- Password Mismatch Modal -->
     <Dialog
       v-if="showPasswordMismatchModal"
+      :open="showPasswordMismatchModal"
       as="div"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
       @close="closePasswordMismatchModal"
@@ -405,7 +406,21 @@ const formatDate = (timestamp: number) => {
 }
 
 const refreshStatus = async (forceRefresh = false) => {
-  const status = await getSyncStatus(forceRefresh)
+  // BOUNDARY: reading the status hits the OS credential store; failing silently
+  // here leaves the page showing stale "No folder selected" state forever.
+  let status: SyncStatus
+  try {
+    status = await getSyncStatus(forceRefresh)
+  } catch (error) {
+    console.error('Sync status error:', error)
+    await useShowNotification(notification, {
+      text: `Could not read the sync configuration: ${error instanceof Error ? error.message : String(error)}`,
+      delay: 3000,
+      type: NotificationType.Danger,
+    })
+    return
+  }
+
   syncStatus.value = status
   showPasswordInput.value = !status.hasPassword
 
@@ -426,7 +441,21 @@ const refreshStatus = async (forceRefresh = false) => {
 }
 
 const selectSyncFolder = async () => {
-  const path = await configureSyncPath()
+  // BOUNDARY: the picker and the credential store are OS calls — a rejection here
+  // used to leave the click looking like a no-op.
+  let path: string | null = null
+  try {
+    path = await configureSyncPath()
+  } catch (error) {
+    console.error('Sync folder error:', error)
+    await useShowNotification(notification, {
+      text: `Could not save the sync folder: ${error instanceof Error ? error.message : String(error)}`,
+      delay: 3000,
+      type: NotificationType.Danger,
+    })
+    return
+  }
+
   if (path) {
     await refreshStatus(true)
 

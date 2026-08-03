@@ -3,6 +3,7 @@
     <!-- Import Password Modal -->
     <Dialog
       v-if="showImportPassword"
+      :open="showImportPassword"
       as="div"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
       @close="cancelImportPassword"
@@ -46,6 +47,9 @@
             class="w-full rounded-xl border-0 bg-vault-elevated px-3.5 py-2.5 text-vault-text text-sm ring-1 ring-inset ring-vault-border focus:ring-2 focus:ring-vault-accent/40 placeholder:text-vault-text-muted transition-all"
             @keyup.enter="submitImportPassword"
           />
+          <p v-if="importPasswordError" class="text-vault-danger text-xs">
+            {{ importPasswordError }}
+          </p>
         </div>
 
         <div class="flex gap-2">
@@ -187,9 +191,11 @@
 <script setup lang="ts">
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/vue'
 import {
+  type BackupResult,
   completePendingEncryptedImport,
   clearPendingEncryptedImport,
   hasPendingEncryptedImport,
+  importTokens,
 } from '~/composables/useSettings'
 
 const token = reactive({
@@ -203,46 +209,74 @@ const notification = useNotification()
 
 const showImportPassword = ref(false)
 const importPassword = ref('')
+const importPasswordError = ref('')
 const importing = ref(false)
 const importPasswordInput = ref<HTMLInputElement>()
 
 const createImportToken = async () => {
-  await importTokens(notification, true)
-  if (hasPendingEncryptedImport()) {
+  const result = await importTokens()
+
+  if (result.needsPassword && hasPendingEncryptedImport()) {
     showImportPassword.value = true
     importPassword.value = ''
     await nextTick()
     importPasswordInput.value?.focus()
+    return
   }
+
+  if (result.cancelled) return
+
+  if (!result.success) {
+    await useShowNotification(notification, {
+      text: result.error ?? 'Import failed',
+      delay: 3000,
+      type: NotificationType.Danger,
+    })
+    return
+  }
+
+  await useShowNotification(notification, {
+    text: `${result.tokensCount} tokens imported`,
+    delay: 1500,
+  })
+  navigateTo('/')
 }
 
 const submitImportPassword = async () => {
   if (!importPassword.value || importing.value) return
   importing.value = true
-  const result = await completePendingEncryptedImport(importPassword.value)
-  importing.value = false
+  importPasswordError.value = ''
 
-  if (result.success) {
-    showImportPassword.value = false
-    importPassword.value = ''
-    await useShowNotification(notification, {
-      text: `${result.tokensCount} tokens imported`,
-      delay: 1500,
-    })
-    navigateTo('/')
-  } else if (result.cancelled) {
-    cancelImportPassword()
-  } else {
-    await useShowNotification(notification, {
-      text: result.error ?? 'Import failed',
-      type: NotificationType.Danger,
-    })
+  let result: BackupResult
+  try {
+    result = await completePendingEncryptedImport(importPassword.value)
+  } finally {
+    importing.value = false
   }
+
+  if (result.cancelled) {
+    cancelImportPassword()
+    return
+  }
+
+  // Inline, not a toast: the modal is still open and would cover it.
+  if (!result.success) {
+    importPasswordError.value = result.error ?? 'Import failed'
+    return
+  }
+
+  cancelImportPassword()
+  await useShowNotification(notification, {
+    text: `${result.tokensCount} tokens imported`,
+    delay: 1500,
+  })
+  navigateTo('/')
 }
 
 const cancelImportPassword = () => {
   showImportPassword.value = false
   importPassword.value = ''
+  importPasswordError.value = ''
   clearPendingEncryptedImport()
 }
 

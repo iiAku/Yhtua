@@ -13,6 +13,7 @@
     <!-- Export Password Modal -->
     <Dialog
       v-if="showExportPasswordModal"
+      :open="showExportPasswordModal"
       as="div"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
       @close="cancelExport"
@@ -108,6 +109,7 @@
     <!-- Import Password Modal -->
     <Dialog
       v-if="showImportPasswordModal"
+      :open="showImportPasswordModal"
       as="div"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
       @close="cancelImport"
@@ -357,7 +359,11 @@
 
 <script setup lang="ts">
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/vue'
-import { exportTokensEncrypted, importTokensEncrypted } from '~/composables/useSettings'
+import {
+  type BackupResult,
+  exportTokensEncrypted,
+  importTokensEncrypted,
+} from '~/composables/useSettings'
 
 const appVersion = __APP_VERSION__
 
@@ -403,16 +409,27 @@ const confirmExport = async () => {
   exporting.value = true
   exportPasswordError.value = ''
 
+  let result: BackupResult
   try {
-    const success = await exportTokensEncrypted(notification, exportPassword.value)
-    if (success) {
-      showExportPasswordModal.value = false
-      exportPassword.value = ''
-      exportPasswordConfirm.value = ''
-    }
+    result = await exportTokensEncrypted(exportPassword.value)
   } finally {
     exporting.value = false
   }
+
+  // Cancelling the save dialog is not a failure — leave the modal as it was.
+  if (result.cancelled) return
+
+  if (!result.success) {
+    exportPasswordError.value = result.error ?? 'Export failed'
+    return
+  }
+
+  // Close first: a toast rendered under the open modal is invisible.
+  cancelExport()
+  await useShowNotification(notification, {
+    text: `${result.tokensCount} tokens exported`,
+    delay: 2000,
+  })
 }
 
 const openImportModal = () => {
@@ -436,15 +453,29 @@ const confirmImport = async () => {
   importing.value = true
   importPasswordError.value = ''
 
+  let result: BackupResult
   try {
-    const success = await importTokensEncrypted(notification, importPassword.value)
-    if (success) {
-      showImportPasswordModal.value = false
-      importPassword.value = ''
-    }
+    result = await importTokensEncrypted(importPassword.value)
   } finally {
     importing.value = false
   }
+
+  // Cancelling the file picker or the overwrite prompt is not a failure.
+  if (result.cancelled) return
+
+  if (!result.success) {
+    importPasswordError.value = result.error ?? 'Import failed'
+    return
+  }
+
+  // Close first: a toast rendered under the open modal is invisible.
+  cancelImport()
+  await useShowNotification(notification, {
+    text: result.legacy
+      ? `${result.tokensCount} tokens imported and converted`
+      : `${result.tokensCount} tokens imported`,
+    delay: 2000,
+  })
 }
 
 const showRemoveDialogue = () =>

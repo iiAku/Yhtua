@@ -1,5 +1,9 @@
 <template>
-  <div aria-live="assertive" class="pointer-events-none fixed inset-0 flex items-end px-4 py-4">
+  <!-- Above the z-50 modals: a toast behind an open dialog is invisible. -->
+  <div
+    aria-live="assertive"
+    class="pointer-events-none fixed inset-0 z-[60] flex items-end px-4 py-4"
+  >
     <div class="flex w-full flex-col items-center">
       <transition enter-active-class="animate-fade-in-up" leave-active-class="animate-fade-out">
         <div
