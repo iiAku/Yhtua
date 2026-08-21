@@ -63,7 +63,7 @@ Encryption at rest does not protect against malware or another process running a
 
 Prerequisites:
 
-- Bun 1.3.11+
+- Bun 1.4.0+
 - Node.js 22.12+
 - Rust 1.93.1 with `rustfmt` and `clippy`
 - platform-specific [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
