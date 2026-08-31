@@ -15,11 +15,12 @@ export const __setCryptoPortForTesting = (port: CryptoPort | null) => {
 
 export const getCryptoPort = (): CryptoPort => {
   if (cachedPort) return cachedPort
-  // The native module (modules/yhtua-vault) registers itself here in the
-  // bridge phase; its absence is only tolerable in development.
-  const nativePort: CryptoPort | null = null
-  if (nativePort) {
-    cachedPort = nativePort
+  // The native module's absence is only tolerable in development.
+  const { nativeCryptoPort } = require('../../modules/yhtua-vault') as {
+    nativeCryptoPort: CryptoPort | null
+  }
+  if (nativeCryptoPort) {
+    cachedPort = nativeCryptoPort
     return cachedPort
   }
   if (__DEV__ && process.env.EXPO_PUBLIC_USE_MOCK_VAULT !== 'false') {

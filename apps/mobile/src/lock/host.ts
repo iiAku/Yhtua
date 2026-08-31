@@ -88,10 +88,19 @@ export const requestUnlock = async () => {
   if (machine.state !== 'unlocking') return
   const attemptId = machine.authAttempt
   try {
-    // Auth on mobile IS the key fetch: the crypto port's readiness check
-    // stands in until the native module's authenticated session exists.
-    const ready = await getCryptoPort().isEncryptionReady()
-    dispatch(ready ? { type: 'AUTH_SUCCEEDED', attemptId } : { type: 'AUTH_FAILED', attemptId })
+    // Auth on mobile IS the key fetch: authenticateVault performs a real
+    // access-control-bound Keychain read (raises the biometric prompt). The
+    // readiness probe is ONLY the dev-mock fallback, which has no biometrics
+    // by construction.
+    let granted: boolean
+    try {
+      const { authenticateVault } = await import('../../modules/yhtua-vault')
+      const nativeAuth = authenticateVault()
+      granted = nativeAuth ? await nativeAuth : await getCryptoPort().isEncryptionReady()
+    } catch {
+      granted = await getCryptoPort().isEncryptionReady()
+    }
+    dispatch(granted ? { type: 'AUTH_SUCCEEDED', attemptId } : { type: 'AUTH_FAILED', attemptId })
   } catch {
     dispatch({ type: 'AUTH_FAILED', attemptId })
   }

@@ -15,7 +15,11 @@
     },
     "ios": {
       "bundleIdentifier": "fr.gendrey.yhtua",
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Face ID unlocks your encrypted authenticator tokens.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "fr.gendrey.yhtua",

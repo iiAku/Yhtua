@@ -26,3 +26,18 @@ cargo deny check
 Security-sensitive changes require tests for failure behavior and backward compatibility. Do not weaken schemas, permissions, CSP, cryptographic parameters, or assertions to make a check pass. Update the changelog and relevant format/threat-model documentation when behavior or trust boundaries change.
 
 Pull requests should be focused, explain user-visible and security impact, identify platform testing performed, and disclose tests that could not be run.
+
+## Mobile (apps/mobile)
+
+- The shared conformance fixtures in `packages/domain` run in every client's
+  suite; a security-relevant behavior change must update the fixtures, never
+  fork a per-client copy.
+- Synthetic Base32 secrets only — in fixtures, tests, screenshots, and the
+  dev mock vault (which refuses anything else by design).
+- Native-artifact discipline: every native dependency or config change
+  (including Expo SDK upgrades) requires a fresh development build AND a
+  passing on-device vault self-test before any feature testing — a stale
+  binary silently validates mocked paths.
+- The native module's `index.ts` is the audit artifact for what JavaScript
+  can ask of the native layer. Anything that widens it (or adds a way to
+  read the vault key) must be called out explicitly in review.

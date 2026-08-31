@@ -44,3 +44,24 @@ The bundled frontend is trusted but receives attacker-controlled import and sync
 - Linux uses the Tauri GTK3/WebKitGTK stack, which currently carries documented unmaintained transitive Rust bindings and one RustSec soundness warning in an API Yhtua does not call.
 - GitHub Pages does not permit repository-defined HTTP response headers. The landing page uses a strict CSP and referrer policy in HTML, but directives that require response headers (notably `frame-ancestors`) cannot be enforced there.
 - No independent penetration test or formal cryptographic audit is claimed.
+
+## Mobile client (iOS, in development)
+
+The mobile client preserves the desktop format properties (same Rust crate,
+byte-exact golden vectors) with a stricter runtime posture:
+
+| Abuse case                                            | Control                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Device loss / theft                                   | Vault key in the iOS Keychain behind `SecAccessControl(.biometryCurrentSet)` with `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`; the Keychain fetch IS the biometric check (single authorization path, no separate LAContext gate); never synchronized to iCloud |
+| Biometric re-enrollment (attacker adds a face/finger) | `.biometryCurrentSet` invalidates the key item on enrollment change — the vault becomes unreadable; recovery is a YHP2 backup import (documented, intended)                                                                                                          |
+| Key exfiltration via JS                               | The key never crosses into JavaScript: the native module exposes narrow operations (`decryptSecret`, batch decrypt, YHP2 import/export) and no `getRawKey`; key generation happens in Swift (SecRandomCopyBytes), never as an FFI return value                       |
+| Plaintext at rest                                     | Mobile at-rest invariant: the store rejects non-ciphertext tokens in every mutation and drops them during hydration; plaintext backup import is refused outright (desktop converts)                                                                                  |
+| App-switcher snapshot / backgrounding                 | Shared lock machine with zero-grace config (`backgroundLockMs: 0`): every real backgrounding clears the JS secret cache and requires re-authentication; native snapshot masking lands with the device-test phase                                                     |
+| Stale async decrypts after lock                       | `secretEpoch` in the lock machine: in-flight decrypts that resolve after a cache clear are refused                                                                                                                                                                   |
+| Malicious YHP2 file                                   | Envelope parsed only in Rust with pinned rejection vectors (truncation, flipped magic, flipped auth tag); JSON policy layer enforces the shared strict schemas and limits                                                                                            |
+| Migration between devices                             | Password-encrypted YHP2 export/import is the ONLY path; local YHL2 ciphertext is bound to a per-device key by design                                                                                                                                                 |
+
+Residual risk: decrypted codes and inbound FFI staging copies exist
+transiently in process memory while the app is unlocked — the same exposure
+class as displaying the code on screen. No OTA JavaScript updates, ever:
+release binaries are signed store builds only.

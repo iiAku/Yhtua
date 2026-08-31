@@ -1,0 +1,8 @@
+{
+  "name": "yhtua-vault",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Yhtua native vault module: Keychain key custody + Rust crypto formats",
+  "author": "Yoann Gendrey",
+  "main": "index.ts"
+}

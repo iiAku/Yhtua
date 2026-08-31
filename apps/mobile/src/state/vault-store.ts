@@ -21,7 +21,13 @@ import { storagePort } from '../ports/storage'
 // AND drops them during hydration, so tampered or foreign storage can never
 // put a plaintext secret at rest here.
 
-const isCiphertextToken = (token: Token): boolean => token.otp.encrypted
+// A mobile at-rest secret must LOOK like ciphertext, not merely claim it:
+// YHL2 blobs base64-start with the 'YHL2' magic ('WUhM'); the dev mock uses
+// its loud MOCK- prefix. A plaintext secret with encrypted:true set fails.
+const CIPHERTEXT_SHAPES = [/^WUhM/, /^MOCK-/]
+
+const isCiphertextToken = (token: Token): boolean =>
+  token.otp.encrypted && CIPHERTEXT_SHAPES.some((shape) => shape.test(token.otp.secret))
 
 /** Accepts only tokens that satisfy the shared schema AND the mobile at-rest
  * invariant. */

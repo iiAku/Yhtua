@@ -93,3 +93,11 @@ The root `package.json` is the human-edited version source. `bun run version:bum
 ## License and notices
 
 Yhtua is distributed under the [MIT License](LICENSE). See [ASSET-LICENSES.md](ASSET-LICENSES.md) for bundled asset notes and [docs/dependency-policy.md](docs/dependency-policy.md) for dependency governance.
+
+## Mobile (in development)
+
+An iOS client (Expo/React Native over the same Rust crypto core via UniFFI)
+lives in `apps/mobile`. It shares `packages/domain` (schemas, merge rules,
+lock-state machine) and the byte-exact golden vectors with the desktop app;
+`docs/mobile-strategy.md` records the architecture decisions and
+`docs/release-checklist.md` the device-gated release procedure.
