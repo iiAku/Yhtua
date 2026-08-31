@@ -52,7 +52,8 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" options={{ title: 'Tokens' }} />
         <Stack.Screen name="token/new" options={{ title: 'Add token' }} />
-        <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+        <Stack.Screen name="settings/index" options={{ title: 'Settings' }} />
+        <Stack.Screen name="settings/transfer" options={{ title: 'Backups' }} />
       </Stack>
     </>
   )

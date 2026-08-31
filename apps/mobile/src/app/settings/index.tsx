@@ -1,8 +1,9 @@
+import { Link } from 'expo-router'
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { dispatch } from '../lock/host'
-import { getCryptoPort } from '../ports'
-import { destroyVaultStorage, useVault } from '../state/vault-store'
+import { dispatch } from '../../lock/host'
+import { getCryptoPort } from '../../ports'
+import { destroyVaultStorage, useVault } from '../../state/vault-store'
 
 export default function Settings() {
   const tokenCount = useVault((state) => state.tokens.length)
@@ -27,9 +28,11 @@ export default function Settings() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Vault</Text>
         <Text style={styles.cardText}>{tokenCount} token(s), encrypted at rest.</Text>
-        <Text style={styles.cardText}>
-          Import/export (YHP2) and biometric unlock arrive with the native vault module.
-        </Text>
+        <Link href="/settings/transfer" asChild>
+          <Pressable style={styles.secondary}>
+            <Text style={styles.secondaryText}>Backup import / export…</Text>
+          </Pressable>
+        </Link>
       </View>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Danger zone</Text>

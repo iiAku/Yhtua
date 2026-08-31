@@ -26,6 +26,19 @@ if (!expected || !/^\d+\.\d+\.\d+$/.test(expected)) {
   throw new Error('package.json must contain a stable semantic version')
 }
 
+// The mobile app versions independently of the desktop lockstep, but its own
+// sources must agree with each other.
+const mobilePackage = readJsonVersion('apps/mobile/package.json')
+const mobileApp = (
+  JSON.parse(readFileSync('apps/mobile/app.json', 'utf8')) as { expo?: { version?: unknown } }
+).expo?.version as string | undefined
+if (!mobilePackage || mobilePackage !== mobileApp) {
+  console.error(
+    `apps/mobile version mismatch: package.json ${mobilePackage} vs app.json ${mobileApp}`,
+  )
+  process.exit(1)
+}
+
 const mismatches = [...versions].filter(([, version]) => version !== expected)
 if (mismatches.length > 0) {
   for (const [file, version] of mismatches) {
