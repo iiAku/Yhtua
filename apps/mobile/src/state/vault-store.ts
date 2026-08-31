@@ -21,13 +21,25 @@ import { storagePort } from '../ports/storage'
 // AND drops them during hydration, so tampered or foreign storage can never
 // put a plaintext secret at rest here.
 
-// A mobile at-rest secret must LOOK like ciphertext, not merely claim it:
-// YHL2 blobs base64-start with the 'YHL2' magic ('WUhM'); the dev mock uses
-// its loud MOCK- prefix. A plaintext secret with encrypted:true set fails.
-const CIPHERTEXT_SHAPES = [/^WUhM/, /^MOCK-/]
+// A mobile at-rest secret must BE structural ciphertext, not merely claim
+// it. Real ciphertext is base64 of 'YHL2' || nonce(12) || ct+tag(>=16) —
+// minimum 32 bytes with the exact magic; the dev mock uses its loud MOCK-
+// prefix. A plaintext secret with encrypted:true set fails both.
+const YHL2_MIN_BYTES = 4 + 12 + 16
+
+const isStructuralYhl2 = (secret: string): boolean => {
+  if (!/^[A-Za-z0-9+/]+=*$/.test(secret)) return false
+  try {
+    const decoded = atob(secret)
+    return decoded.length >= YHL2_MIN_BYTES && decoded.startsWith('YHL2')
+  } catch {
+    return false
+  }
+}
 
 const isCiphertextToken = (token: Token): boolean =>
-  token.otp.encrypted && CIPHERTEXT_SHAPES.some((shape) => shape.test(token.otp.secret))
+  token.otp.encrypted &&
+  (isStructuralYhl2(token.otp.secret) || token.otp.secret.startsWith('MOCK-'))
 
 /** Accepts only tokens that satisfy the shared schema AND the mobile at-rest
  * invariant. */

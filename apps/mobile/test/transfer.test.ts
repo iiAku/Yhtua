@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
+vi.mock('react-native', () => ({
+  AppState: {
+    currentState: 'active',
+    addEventListener: () => ({ remove: () => undefined }),
+  },
+}))
+
 const memory = new Map<string, string>()
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: {
@@ -14,6 +21,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 }))
 
 import type { CryptoPort } from '@yhtua/domain'
+import { dispatch, startLockHost } from '../src/lock/host'
 import { __setCryptoPortForTesting } from '../src/ports'
 import { exportBackupContent, importBackupContent } from '../src/transfer'
 import { ensureVaultHydrated, vaultStore } from '../src/state/vault-store'
@@ -40,9 +48,24 @@ const fakePort: CryptoPort = {
 
 __setCryptoPortForTesting(fakePort)
 
+// Transfers require an unlocked vault: drive the real host to unlocked once.
+const unlockForTests = async () => {
+  await startLockHost()
+  dispatch({ type: 'VAULT_CREATED' })
+  dispatch({ type: 'UNLOCK_REQUESTED' })
+}
+
 describe('mobile YHP2 transfer policy', () => {
+  it('refuses transfers while the vault is not unlocked', async () => {
+    const locked = await importBackupContent('{}', 'irrelevant')
+    expect(locked.success).toBe(false)
+    expect(locked.error).toMatch(/Unlock the vault/)
+    await expect(exportBackupContent('irrelevant')).rejects.toThrow(/Unlock the vault/)
+  })
+
   it('round-trips an encrypted backup and lands only ciphertext at rest', async () => {
     await ensureVaultHydrated()
+    await unlockForTests()
     vaultStore.setState({
       version: 2,
       tokens: [

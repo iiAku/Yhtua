@@ -22,8 +22,8 @@ const native = requireOptionalNativeModule<YhtuaVaultNative>('YhtuaVault')
 
 export const isNativeVaultAvailable = (): boolean => native !== null
 
-// Lifecycle operations are serialized: a reset racing an import (or two
-// initializations) must never interleave key custody steps.
+// ALL key-custody transactions are serialized: a reset racing an import, two
+// initializations, or overlapping biometric fetches must never interleave.
 let lifecycleChain: Promise<unknown> = Promise.resolve()
 const serialized = <T>(operation: () => Promise<T>): Promise<T> => {
   const next = lifecycleChain.then(operation, operation)
@@ -38,7 +38,7 @@ export const authenticateVault = (): Promise<boolean> | null =>
 
 /** Batch decryption under ONE biometric checkpoint (export flows). */
 export const decryptSecretsBatch = (ciphertexts: string[]): Promise<string[]> | null =>
-  native ? native.decryptSecrets(ciphertexts) : null
+  native ? serialized(() => native.decryptSecrets(ciphertexts)) : null
 
 /** Debug builds only; the native side refuses in release. */
 export const runNativeSelfTest = (fixtureJson: string): Promise<string> => {
@@ -55,10 +55,11 @@ export const nativeCryptoPort: CryptoPort | null = native
           await native.destroyVault()
           await native.initializeVault()
         }),
-      encryptSecret: (plaintext) => native.encryptSecret(plaintext),
-      decryptSecret: (ciphertext) => native.decryptSecret(ciphertext),
-      encryptWithPassword: (plaintext, password) => native.exportYhp2(password, plaintext),
+      encryptSecret: (plaintext) => serialized(() => native.encryptSecret(plaintext)),
+      decryptSecret: (ciphertext) => serialized(() => native.decryptSecret(ciphertext)),
+      encryptWithPassword: (plaintext, password) =>
+        serialized(() => native.exportYhp2(password, plaintext)),
       decryptWithPassword: (ciphertextBase64, password) =>
-        native.importYhp2(password, ciphertextBase64),
+        serialized(() => native.importYhp2(password, ciphertextBase64)),
     }
   : null

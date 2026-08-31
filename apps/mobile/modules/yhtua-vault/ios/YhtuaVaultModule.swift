@@ -47,8 +47,10 @@ public class YhtuaVaultModule: Module {
     // Bounded to the vault's own token cap; a cancellation aborts the WHOLE
     // batch (JS must never retry per-secret, which would prompt N times).
     AsyncFunction("decryptSecrets") { (ciphertextsBase64: [String]) -> [String] in
-      guard ciphertextsBase64.count <= 10_000 else {
-        throw Exception(name: "InputTooLarge", description: "Batch exceeds the vault token cap")
+      guard ciphertextsBase64.count <= 10_000,
+        ciphertextsBase64.reduce(0, { $0 + $1.utf8.count }) <= 96 * 1024 * 1024
+      else {
+        throw Exception(name: "InputTooLarge", description: "Batch exceeds the vault limits")
       }
       return try mapErrors {
         try KeyStore.withKey(prompt: "Export your tokens") { key in

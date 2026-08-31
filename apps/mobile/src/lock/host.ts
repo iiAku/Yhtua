@@ -81,28 +81,38 @@ export const dispatch = (event: LockEvent) => {
   notify()
 }
 
+let unlockInFlight = false
+
 /** Requests an unlock; in Expo Go the mock auth succeeds immediately. The
- * native bridge replaces performAuth with the biometric-gated key fetch. */
+ * native bridge replaces the probe with the biometric-gated key fetch. */
 export const requestUnlock = async () => {
-  dispatch({ type: 'UNLOCK_REQUESTED' })
-  if (machine.state !== 'unlocking') return
-  const attemptId = machine.authAttempt
+  // Single-flight: repeated taps must never stack biometric prompts.
+  if (unlockInFlight) return
+  unlockInFlight = true
   try {
-    // Auth on mobile IS the key fetch: authenticateVault performs a real
-    // access-control-bound Keychain read (raises the biometric prompt). The
-    // readiness probe is ONLY the dev-mock fallback, which has no biometrics
-    // by construction.
-    let granted: boolean
+    dispatch({ type: 'UNLOCK_REQUESTED' })
+    if (machine.state !== 'unlocking') return
+    const attemptId = machine.authAttempt
+
+    // Resolve the authenticator FIRST: only the ABSENCE of the native module
+    // selects the dev-mock readiness probe. A native rejection (cancel,
+    // failure) is a rejection — falling back there would be an unlock bypass.
+    let nativeAuth: (() => Promise<boolean>) | null = null
     try {
       const { authenticateVault } = await import('../../modules/yhtua-vault')
-      const nativeAuth = authenticateVault()
-      granted = nativeAuth ? await nativeAuth : await getCryptoPort().isEncryptionReady()
+      const pending = authenticateVault()
+      if (pending) nativeAuth = () => pending
     } catch {
-      granted = await getCryptoPort().isEncryptionReady()
+      nativeAuth = null
     }
-    dispatch(granted ? { type: 'AUTH_SUCCEEDED', attemptId } : { type: 'AUTH_FAILED', attemptId })
-  } catch {
-    dispatch({ type: 'AUTH_FAILED', attemptId })
+    try {
+      const granted = nativeAuth ? await nativeAuth() : await getCryptoPort().isEncryptionReady()
+      dispatch(granted ? { type: 'AUTH_SUCCEEDED', attemptId } : { type: 'AUTH_FAILED', attemptId })
+    } catch {
+      dispatch({ type: 'AUTH_FAILED', attemptId })
+    }
+  } finally {
+    unlockInFlight = false
   }
 }
 

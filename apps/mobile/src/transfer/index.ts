@@ -9,6 +9,7 @@ import {
   type BackupResult,
   type Token,
 } from '@yhtua/domain'
+import { getLockState } from '../lock/host'
 import { getCryptoPort } from '../ports'
 import { getSecretEpoch } from '../state/secret-cache'
 import { parseAtRestToken, replaceVault, vaultStore } from '../state/vault-store'
@@ -23,6 +24,9 @@ export const importBackupContent = async (
   jsonContent: string,
   password: string,
 ): Promise<BackupResult> => {
+  if (getLockState() !== 'unlocked') {
+    return { success: false, error: 'Unlock the vault before importing' }
+  }
   const epochAtStart = getSecretEpoch()
   const envelope = parseAndValidate(
     jsonContent,
@@ -88,6 +92,9 @@ export const importBackupContent = async (
 }
 
 export const exportBackupContent = async (password: string): Promise<string> => {
+  if (getLockState() !== 'unlocked') {
+    throw new Error('Unlock the vault before exporting')
+  }
   const epochAtStart = getSecretEpoch()
   const crypto = getCryptoPort()
   const state = vaultStore.getState()
@@ -138,5 +145,10 @@ export const exportBackupContent = async (password: string): Promise<string> => 
     throw new Error('The vault locked during the export — try again')
   }
   const data = await crypto.encryptWithPassword(JSON.stringify(payload), password)
+  // The password encryption itself can span a lock: re-check before the
+  // result (which embeds decrypted secrets) is delivered anywhere.
+  if (getSecretEpoch() !== epochAtStart) {
+    throw new Error('The vault locked during the export — try again')
+  }
   return JSON.stringify({ version: '2.3.0', encrypted: true, data }, null, 2)
 }
