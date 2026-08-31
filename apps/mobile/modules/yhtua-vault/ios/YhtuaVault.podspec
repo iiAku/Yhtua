@@ -30,8 +30,8 @@ Pod::Spec.new do |s|
     'DEFINES_MODULE' => 'YES',
     'SWIFT_COMPILATION_MODE' => 'wholemodule',
     'SWIFT_INCLUDE_PATHS[sdk=iphoneos*]' => '$(PODS_TARGET_SRCROOT)/rust/YhtuaMobile.xcframework/ios-arm64/Headers',
-    'SWIFT_INCLUDE_PATHS[sdk=iphonesimulator*]' => '$(PODS_TARGET_SRCROOT)/rust/YhtuaMobile.xcframework/ios-arm64-simulator/Headers',
+    'SWIFT_INCLUDE_PATHS[sdk=iphonesimulator*]' => '$(PODS_TARGET_SRCROOT)/rust/YhtuaMobile.xcframework/ios-arm64_x86_64-simulator/Headers',
     'HEADER_SEARCH_PATHS[sdk=iphoneos*]' => '$(PODS_TARGET_SRCROOT)/rust/YhtuaMobile.xcframework/ios-arm64/Headers',
-    'HEADER_SEARCH_PATHS[sdk=iphonesimulator*]' => '$(PODS_TARGET_SRCROOT)/rust/YhtuaMobile.xcframework/ios-arm64-simulator/Headers'
+    'HEADER_SEARCH_PATHS[sdk=iphonesimulator*]' => '$(PODS_TARGET_SRCROOT)/rust/YhtuaMobile.xcframework/ios-arm64_x86_64-simulator/Headers'
   }
 end

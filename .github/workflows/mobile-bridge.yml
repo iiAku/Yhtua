@@ -81,7 +81,7 @@ jobs:
             -target arm64-apple-ios15.1-simulator \
             "$RUNNER_TEMP/yhtua-vault-ios/bindings/yhtua_mobile.swift" \
             bridge/ios/ConsumerCheck/consumer.swift \
-            -I "$RUNNER_TEMP/yhtua-vault-ios/YhtuaMobile.xcframework/ios-arm64-simulator/Headers"
+            -I "$RUNNER_TEMP/yhtua-vault-ios/YhtuaMobile.xcframework/ios-arm64_x86_64-simulator/Headers"
       - name: Upload XCFramework artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

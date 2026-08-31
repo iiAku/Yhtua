@@ -29,10 +29,18 @@ staging="$(mktemp -d "${TMPDIR:-/tmp}/yhtua-ios-build.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 mkdir -p "$staging/bindings"
 
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
 cargo build -p yhtua-mobile --release --locked --target aarch64-apple-ios
 cargo build -p yhtua-mobile --release --locked --target aarch64-apple-ios-sim
+cargo build -p yhtua-mobile --release --locked --target x86_64-apple-ios
+
+# Xcode links simulator apps for both architectures; the simulator slice must
+# be universal or the x86_64 link fails with 'library not found'.
+lipo -create \
+  target/aarch64-apple-ios-sim/release/libyhtua_mobile.a \
+  target/x86_64-apple-ios/release/libyhtua_mobile.a \
+  -output "$staging/libyhtua_mobile_sim.a"
 
 cargo run -p yhtua-mobile --features bindgen --bin uniffi-bindgen --locked -- \
   generate \
@@ -51,7 +59,7 @@ done
 xcodebuild -create-xcframework \
   -library target/aarch64-apple-ios/release/libyhtua_mobile.a \
   -headers "$staging/headers-device" \
-  -library target/aarch64-apple-ios-sim/release/libyhtua_mobile.a \
+  -library "$staging/libyhtua_mobile_sim.a" \
   -headers "$staging/headers-simulator" \
   -output "$staging/YhtuaMobile.xcframework"
 
