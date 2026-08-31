@@ -20,6 +20,12 @@
       "env": {
         "EXPO_PUBLIC_USE_MOCK_VAULT": "false"
       }
+    },
+    "development-simulator": {
+      "extends": "development",
+      "ios": {
+        "simulator": true
+      }
     }
   },
   "submit": {

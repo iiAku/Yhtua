@@ -46,6 +46,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bf4a9317-2b05-425b-ad01-eeec6cb5041d"
+      }
+    },
+    "owner": "iiakuexpo"
   }
 }
