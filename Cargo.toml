@@ -16,7 +16,7 @@ authors = ["Yoann Gendrey <yoann@gendrey.fr>"]
 [workspace.dependencies]
 ring = "0.17"
 base64 = "0.23"
-argon2 = { version = "0.5.3", features = ["zeroize"] }
+argon2 = { version = "0.6.0", features = ["zeroize"] }
 zeroize = { version = "1.9", features = ["derive"] }
 thiserror = "2"
 uniffi = "0.32"
