@@ -23,13 +23,13 @@ Pod::Spec.new do |s|
   s.vendored_frameworks = 'rust/YhtuaMobile.xcframework'
 
   # The generated bindings guard the FFI types behind
-  # `#if canImport(yhtua_mobileFFI)`; without these include paths the import
-  # silently fails and every RustBuffer/RustCallStatus reference breaks. The
-  # module.modulemap lives in the vendored XCFramework's per-slice Headers.
+  # `#if canImport(yhtua_mobileFFI)`; this include path is the SINGLE owner of
+  # that module map (build-ios-rust.sh deliberately ships the XCFramework
+  # without headers — headers inside it get staged a second time by CocoaPods
+  # and clang then reports 'redefinition of module yhtua_mobileFFI').
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'SWIFT_COMPILATION_MODE' => 'wholemodule',
-    'SWIFT_INCLUDE_PATHS[sdk=iphoneos*]' => '$(PODS_TARGET_SRCROOT)/rust/YhtuaMobile.xcframework/ios-arm64/Headers',
-    'SWIFT_INCLUDE_PATHS[sdk=iphonesimulator*]' => '$(PODS_TARGET_SRCROOT)/rust/YhtuaMobile.xcframework/ios-arm64_x86_64-simulator/Headers'
+    'SWIFT_INCLUDE_PATHS' => '$(PODS_TARGET_SRCROOT)/rust/include'
   }
 end

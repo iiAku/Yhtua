@@ -15,16 +15,24 @@ fi
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-out_dir="${1:-$repo_root/apps/mobile/modules/yhtua-vault/ios/rust}"
-# Refuse to delete anything outside the repository or the CI temp dir; build
-# into a fresh staging directory and swap it in atomically at the end.
+default_out="$repo_root/apps/mobile/modules/yhtua-vault/ios/rust"
+out_dir="${1:-$default_out}"
+# This script REPLACES its output directory, so it accepts only the module's
+# own rust/ directory or a dedicated temp path — never an arbitrary location,
+# and never a directory holding anything but a previous run's artifacts.
 case "$out_dir" in
-  "$repo_root"/*|"${RUNNER_TEMP:-/nonexistent-runner-temp}"/*|"${TMPDIR:-/tmp}"/*) ;;
+  "$default_out") ;;
+  "${RUNNER_TEMP:-/nonexistent-runner-temp}"/yhtua-vault-ios*) ;;
+  "${TMPDIR:-/tmp}"/yhtua-vault-ios*) ;;
   *)
-    echo "refusing output path outside the repository or temp dirs: $out_dir" >&2
+    echo "refusing output path (use $default_out or a *?/yhtua-vault-ios* temp dir): $out_dir" >&2
     exit 1
     ;;
 esac
+if [[ -e "$out_dir" && ! -e "$out_dir/YhtuaMobile.xcframework" ]]; then
+  echo "refusing to replace $out_dir: it holds no previous build output" >&2
+  exit 1
+fi
 staging="$(mktemp -d "${TMPDIR:-/tmp}/yhtua-ios-build.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 mkdir -p "$staging/bindings"
@@ -50,19 +58,17 @@ cargo run -p yhtua-mobile --features bindgen --bin uniffi-bindgen --locked -- \
   --language swift \
   --out-dir "$staging/bindings"
 
-# XCFramework headers: the FFI header + modulemap (named module.modulemap so
-# the framework is importable without extra flags).
-for slice in device simulator; do
-  mkdir -p "$staging/headers-$slice"
-  cp "$staging/bindings/yhtua_mobileFFI.h" "$staging/headers-$slice/"
-  cp "$staging/bindings/yhtua_mobileFFI.modulemap" "$staging/headers-$slice/module.modulemap"
-done
+# EXACTLY ONE physical yhtua_mobileFFI module map, and the pod owns it. Headers
+# inside the XCFramework get staged a second time by CocoaPods, and clang then
+# sees two definitions of the module ('redefinition of module yhtua_mobileFFI').
+# The header is architecture-independent, so one include/ dir serves both slices.
+mkdir -p "$staging/include"
+cp "$staging/bindings/yhtua_mobileFFI.h" "$staging/include/"
+cp "$staging/bindings/yhtua_mobileFFI.modulemap" "$staging/include/module.modulemap"
 
 xcodebuild -create-xcframework \
   -library target/aarch64-apple-ios/release/libyhtua_mobile.a \
-  -headers "$staging/headers-device" \
   -library "$staging/sim/libyhtua_mobile.a" \
-  -headers "$staging/headers-simulator" \
   -output "$staging/YhtuaMobile.xcframework"
 
 rm -rf "$out_dir"
@@ -70,5 +76,6 @@ mkdir -p "$(dirname "$out_dir")"
 mv "$staging" "$out_dir"
 trap - EXIT
 
-echo "XCFramework: $out_dir/YhtuaMobile.xcframework"
+echo "XCFramework: $out_dir/YhtuaMobile.xcframework (no headers by design)"
+echo "FFI module map: $out_dir/include/module.modulemap"
 echo "Swift bindings: $out_dir/bindings/yhtua_mobile.swift"

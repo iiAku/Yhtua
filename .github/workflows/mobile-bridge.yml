@@ -75,13 +75,25 @@ jobs:
           ./bridge/golden-vector-runner test/fixtures/crypto-vectors.json
       - name: Build the iOS XCFramework
         run: bash scripts/build-ios-rust.sh "$RUNNER_TEMP/yhtua-vault-ios"
+      - name: Assert the XCFramework ships no headers (single module-map owner)
+        run: |
+          if find "$RUNNER_TEMP/yhtua-vault-ios/YhtuaMobile.xcframework" -name 'module.modulemap' | grep -q .; then
+            echo "XCFramework must not carry headers: CocoaPods stages them a second time" >&2
+            exit 1
+          fi
+          test -f "$RUNNER_TEMP/yhtua-vault-ios/include/module.modulemap"
+          # Both simulator architectures must be present in the universal slice.
+          lipo -info "$RUNNER_TEMP/yhtua-vault-ios/YhtuaMobile.xcframework"/ios-arm64_x86_64-simulator/libyhtua_mobile.a \
+            | grep -q 'arm64' 
+          lipo -info "$RUNNER_TEMP/yhtua-vault-ios/YhtuaMobile.xcframework"/ios-arm64_x86_64-simulator/libyhtua_mobile.a \
+            | grep -q 'x86_64'
       - name: Compile an iOS-simulator consumer against the packaged unit
         run: |
           xcrun -sdk iphonesimulator swiftc -typecheck \
             -target arm64-apple-ios15.1-simulator \
             "$RUNNER_TEMP/yhtua-vault-ios/bindings/yhtua_mobile.swift" \
             bridge/ios/ConsumerCheck/consumer.swift \
-            -I "$RUNNER_TEMP/yhtua-vault-ios/YhtuaMobile.xcframework/ios-arm64_x86_64-simulator/Headers"
+            -I "$RUNNER_TEMP/yhtua-vault-ios/include"
       - name: Upload XCFramework artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
