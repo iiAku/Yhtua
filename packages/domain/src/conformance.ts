@@ -4,6 +4,14 @@
 // between clients. Add a scenario here whenever a rule is worth locking in;
 // never fork per-client copies.
 
+import {
+  initialLockMachine,
+  transition,
+  type LockConfig,
+  type LockEffect,
+  type LockEvent,
+  type LockState,
+} from './lock/machine'
 import { mergeTokens, type MergeResult } from './merge'
 import { plaintextBackupSchema, type Token, type Tombstone } from './schema'
 import { encryptedEnvelopeSchema } from './transfer-policy'
@@ -131,4 +139,127 @@ export const classifyImportPayload = (payload: unknown): 'encrypted' | 'plaintex
   if (encryptedEnvelopeSchema.safeParse(payload).success) return 'encrypted'
   if (plaintextBackupSchema.safeParse(payload).success) return 'plaintext'
   return 'rejected'
+}
+
+export type LockScenario = {
+  name: string
+  config: LockConfig
+  events: LockEvent[]
+  expectedState: LockState
+  /** The exact ordered effect sequence across the whole event sequence. */
+  expectedEffects: LockEffect[]
+}
+
+const lockConfig: LockConfig = { backgroundLockMs: 60_000, idleLockMs: 300_000, maxAuthFailures: 5 }
+
+export const lockScenarios: LockScenario[] = [
+  {
+    name: 'unlock, background past the limit, foreground: locked with cache cleared',
+    config: lockConfig,
+    events: [
+      { type: 'HYDRATION_COMPLETE', hasVault: true, hasKey: true },
+      { type: 'UNLOCK_REQUESTED' },
+      { type: 'AUTH_SUCCEEDED', attemptId: 1 },
+      { type: 'APP_BACKGROUNDED' },
+      { type: 'APP_FOREGROUNDED', elapsedMs: 61_000 },
+    ],
+    expectedState: 'locked',
+    expectedEffects: [
+      'PROMPT_AUTH',
+      'UNMASK_UI',
+      'START_IDLE_TIMER',
+      'MASK_UI',
+      'CLEAR_SECRET_CACHE',
+      'CANCEL_IDLE_TIMER',
+      'UNMASK_UI',
+    ],
+  },
+  {
+    name: 'an auth success that lands while backgrounded never unlocks',
+    config: lockConfig,
+    events: [
+      { type: 'HYDRATION_COMPLETE', hasVault: true, hasKey: true },
+      { type: 'UNLOCK_REQUESTED' },
+      { type: 'APP_BACKGROUNDED' },
+      { type: 'AUTH_SUCCEEDED', attemptId: 1 },
+      { type: 'APP_FOREGROUNDED', elapsedMs: 61_000 },
+    ],
+    expectedState: 'locked',
+    expectedEffects: ['PROMPT_AUTH', 'CLEAR_SECRET_CACHE', 'UNMASK_UI'],
+  },
+  {
+    name: 'a short background keeps the session but still clears the secret cache',
+    config: lockConfig,
+    events: [
+      { type: 'HYDRATION_COMPLETE', hasVault: true, hasKey: true },
+      { type: 'UNLOCK_REQUESTED' },
+      { type: 'AUTH_SUCCEEDED', attemptId: 1 },
+      { type: 'APP_BACKGROUNDED' },
+      { type: 'APP_FOREGROUNDED', elapsedMs: 5_000 },
+    ],
+    expectedState: 'unlocked',
+    expectedEffects: [
+      'PROMPT_AUTH',
+      'UNMASK_UI',
+      'START_IDLE_TIMER',
+      'MASK_UI',
+      'CLEAR_SECRET_CACHE',
+      'CANCEL_IDLE_TIMER',
+      'UNMASK_UI',
+      'START_IDLE_TIMER',
+    ],
+  },
+  {
+    name: 'ciphertext without a key hydrates to locked and refuses ordinary unlocking',
+    config: lockConfig,
+    events: [
+      { type: 'HYDRATION_COMPLETE', hasVault: true, hasKey: false },
+      { type: 'UNLOCK_REQUESTED' },
+    ],
+    expectedState: 'locked',
+    expectedEffects: [],
+  },
+  {
+    name: 'a stale auth completion is ignored',
+    config: lockConfig,
+    events: [
+      { type: 'HYDRATION_COMPLETE', hasVault: true, hasKey: true },
+      { type: 'UNLOCK_REQUESTED' },
+      { type: 'AUTH_SUCCEEDED', attemptId: 99 },
+    ],
+    expectedState: 'unlocking',
+    expectedEffects: ['PROMPT_AUTH'],
+  },
+  {
+    name: 'destroying the vault wipes secrets and clipboard from any session',
+    config: lockConfig,
+    events: [
+      { type: 'HYDRATION_COMPLETE', hasVault: true, hasKey: true },
+      { type: 'UNLOCK_REQUESTED' },
+      { type: 'AUTH_SUCCEEDED', attemptId: 1 },
+      { type: 'VAULT_DESTROYED' },
+    ],
+    expectedState: 'uninitialized',
+    expectedEffects: [
+      'PROMPT_AUTH',
+      'UNMASK_UI',
+      'START_IDLE_TIMER',
+      'CLEAR_SECRET_CACHE',
+      'WIPE_CLIPBOARD',
+      'CANCEL_IDLE_TIMER',
+    ],
+  },
+]
+
+export const evaluateLockScenario = (
+  scenario: LockScenario,
+): { state: LockState; effects: LockEffect[] } => {
+  let machine = initialLockMachine()
+  const effects: LockEffect[] = []
+  for (const event of scenario.events) {
+    const outcome = transition(machine, event, scenario.config)
+    machine = outcome.machine
+    effects.push(...outcome.effects)
+  }
+  return { state: machine.state, effects }
 }

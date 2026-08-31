@@ -1,4 +1,9 @@
-import { importPolicyScenarios, mergeScenarios } from '@yhtua/domain'
+import {
+  evaluateLockScenario,
+  importPolicyScenarios,
+  lockScenarios,
+  mergeScenarios,
+} from '@yhtua/domain'
 import { describe, expect, it } from 'vitest'
 import { mergeTokens } from '~/composables/useMerge'
 import { classifyImportJson } from '~/composables/useSettings'
@@ -23,6 +28,17 @@ describe('conformance (desktop boundary): import policy scenarios', () => {
     '%s',
     (_name, scenario) => {
       expect(classifyImportJson(JSON.stringify(scenario.payload)).kind).toBe(scenario.expected)
+    },
+  )
+})
+
+describe('conformance: lock scenarios', () => {
+  it.each(lockScenarios.map((scenario) => [scenario.name, scenario] as const))(
+    '%s',
+    (_name, scenario) => {
+      const result = evaluateLockScenario(scenario)
+      expect(result.state).toBe(scenario.expectedState)
+      expect(result.effects).toEqual(scenario.expectedEffects)
     },
   )
 })

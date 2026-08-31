@@ -306,6 +306,7 @@ const closeResetModal = async (_type: string, response: boolean) => {
   if (!response) return
   try {
     await resetEncryptionKey()
+    reportVaultDestroyed()
     storeDeleteAllTokens()
     navigateTo('/')
   } catch (resetError) {
@@ -325,6 +326,7 @@ const clearClipboard = async (owned: string | null = lastCopiedFingerprint) => {
   try {
     const cleared = await clearOwnedClipboard(owned, readText, writeText)
     if (cleared && lastCopiedFingerprint === owned) lastCopiedFingerprint = null
+    if (cleared) releaseOwnedClipboard(owned)
   } catch {}
 }
 
@@ -339,6 +341,7 @@ const copy = async () => {
     const fingerprint = await clipboardFingerprint(copiedValue)
     await writeText(copiedValue)
     lastCopiedFingerprint = fingerprint
+    registerOwnedClipboard(fingerprint)
     copied.value = true
     copyError.value = false
 

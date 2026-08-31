@@ -5,6 +5,7 @@
 </template>
 
 <script setup lang="ts">
+import { startLockReporting } from '~/composables/useLock'
 import { runMigrationIfNeeded } from '~/composables/useMigration'
 import { pruneTombstones, store } from '~/composables/useStore'
 import {
@@ -20,6 +21,7 @@ let unsubscribeStore: (() => void) | null = null
 
 onMounted(async () => {
   cleanupInvalidTokens()
+  void startLockReporting()
 
   migrating.value = true
   try {

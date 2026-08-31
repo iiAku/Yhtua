@@ -491,6 +491,7 @@ const closeModal = async (_type: string, response: boolean) => {
   modal.value.Danger.open = false
   if (response) {
     await removeAllTokens(notification)
+    reportVaultDestroyed()
   }
 }
 

@@ -1,5 +1,6 @@
 import * as OTPAuth from 'otpauth'
 import { decryptSecret, encryptSecret } from './useCrypto'
+import { getSecretEpoch } from './useSecretEpoch'
 
 const SECRET_CACHE_TTL_MS = 30 * 1000
 
@@ -21,7 +22,13 @@ export const getCachedSecret = async (
   if (cached && Date.now() < cached.expiresAt) return cached.value
   if (cached) clearTimeout(cached.timer)
 
+  const epochBefore = getSecretEpoch()
   const decrypted = await decryptSecret(encryptedSecret)
+  if (getSecretEpoch() !== epochBefore) {
+    // The lock machine cleared the secret session while this decrypt was in
+    // flight; delivering the plaintext now would outlive the lock.
+    throw new Error('Secret session expired during decryption')
+  }
   const timer = setTimeout(() => {
     const entry = secretCache.get(encryptedSecret)
     if (entry?.value === decrypted) secretCache.delete(encryptedSecret)

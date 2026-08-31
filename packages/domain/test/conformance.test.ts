@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   classifyImportPayload,
+  evaluateLockScenario,
+  lockScenarios,
   evaluateMergeScenario,
   importPolicyScenarios,
   mergeScenarios,
@@ -23,6 +25,17 @@ describe('conformance: import policy scenarios', () => {
     '%s',
     (_name, scenario) => {
       expect(classifyImportPayload(scenario.payload)).toBe(scenario.expected)
+    },
+  )
+})
+
+describe('conformance: lock scenarios', () => {
+  it.each(lockScenarios.map((scenario) => [scenario.name, scenario] as const))(
+    '%s',
+    (_name, scenario) => {
+      const result = evaluateLockScenario(scenario)
+      expect(result.state).toBe(scenario.expectedState)
+      expect(result.effects).toEqual(scenario.expectedEffects)
     },
   )
 })
