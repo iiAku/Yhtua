@@ -31,7 +31,28 @@ Formats are documented in [backup-format.md](backup-format.md). AES-GCM supplies
 
 ## Execution
 
-The implementation runs in 8 phases (golden-vector pinning → Rust crate extraction → TS domain package → lock-state machine → Expo scaffold with mocked crypto port → UniFFI/Expo-Module bridge in three sub-gates → v1 features → EAS/TestFlight). Each phase ends with an adversarial review gate; desktop CI stays green and a desktop release stays cuttable at every merge. Phase 1 (golden vectors + this decision record) landed with this document.
+The implementation runs in 8 phases (golden-vector pinning → Rust crate extraction → TS domain package → lock-state machine → Expo scaffold with mocked crypto port → UniFFI/Expo-Module bridge in three sub-gates → v1 features → EAS/TestFlight). Each phase ends with an adversarial review gate; desktop CI stays green and a desktop release stays cuttable at every merge.
+
+Status (2026-08-31):
+
+- **Done and CI-verified**: Phase 1 (golden vectors), Phase 2 (cargo
+  workspace + `crates/yhtua-crypto`), Phase 3 (bun workspace +
+  `packages/domain` + conformance suite), Phase 4 (lock-state machine,
+  desktop reporting adapter), Phase 5 (Expo scaffold, mocked vault,
+  full lock enforcement, expo-doctor clean, iOS bundle export), Phase 6a
+  (`crates/yhtua-mobile` UniFFI bridge — the macOS `Mobile bridge`
+  workflow executes every golden vector through real Swift→Rust and
+  packages the XCFramework).
+- **Written and reviewed, awaiting device verification**: the native
+  Expo module (KeyStore + module + self-test), EAS profiles and pinned
+  pre-install hook, the YHP2 transfer policy (node-tested over the port),
+  and the release procedure docs.
+- **Blocked on physical resources** (Apple Developer Program membership,
+  a physical iPhone, `eas login`): sub-gates 6b (on-device self-test,
+  biometric matrix) and 6c (EAS development build), the Phase 7 device
+  walkthrough and desktop↔iPhone YHP2 acceptance, and the Phase 8
+  TestFlight/App Store submission — all procedures documented in
+  `docs/release-checklist.md`.
 
 ## Primary references
 
