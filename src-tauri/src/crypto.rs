@@ -494,6 +494,17 @@ fn encrypt_local(plaintext: &str, key: &[u8]) -> Result<String, CryptoError> {
         return Err(CryptoError::InputTooLarge);
     }
     let nonce = random_bytes::<NONCE_LEN>()?;
+    encrypt_local_with_nonce(plaintext, key, nonce)
+}
+
+fn encrypt_local_with_nonce(
+    plaintext: &str,
+    key: &[u8],
+    nonce: [u8; NONCE_LEN],
+) -> Result<String, CryptoError> {
+    if plaintext.len() > MAX_SECRET_BYTES {
+        return Err(CryptoError::InputTooLarge);
+    }
     let ciphertext = seal(plaintext.as_bytes(), key, nonce, LOCAL_AAD)?;
     let mut combined = Vec::with_capacity(LOCAL_FORMAT_MAGIC.len() + NONCE_LEN + ciphertext.len());
     combined.extend_from_slice(LOCAL_FORMAT_MAGIC);
@@ -1052,6 +1063,272 @@ mod tests {
                 .expect("legacy key read succeeds")
                 .is_none()
         );
+    }
+
+    // Golden vectors pinned from the shipping implementation (v2.8.2). They are the
+    // byte-exact compatibility contract for every future implementation of these
+    // formats (crate extraction, mobile bridge). Never regenerate them to make a
+    // failing test pass — a mismatch IS a format break. Synthetic key/secret only.
+    // The same vectors live in test/fixtures/crypto-vectors.json for non-Rust
+    // consumers; golden_vectors_match_shared_fixture_file keeps the two in sync.
+    const GOLDEN_YHL2: &str = "WUhMMiQkJCQkJCQkJCQkJF/Tlxaw9YJuY6By4Y5iy/b4IlzcQVnWIotANO65HLhR";
+    const GOLDEN_YHP2: &str =
+        "WUhQMhEREREREREREREREREREREkJCQkJCQkJCQkJCTw0CgTeOc6O0lgi4shRu19E9mEq1BkZjXFYaEVZU8=";
+    const GOLDEN_LEGACY_LOCAL: &str =
+        "JCQkJCQkJCQkJCQkX9OXFrD1gm5joHLhjmLL9hJc5PhZzQnBadES2QRoq4c=";
+    const GOLDEN_LEGACY_PASSWORD: &str =
+        "ERERERERERERERERERERESQkJCQkJCQkJCQkJAV3G/AUdzdJwflpqAesx/K3bmL5v9C1XxRf/lZKtA==";
+    const GOLDEN_LOCAL_PLAINTEXT: &str = "JBSWY3DPEHPK3PXP";
+    const GOLDEN_BACKUP_PLAINTEXT: &str = "example backup";
+    const GOLDEN_PASSWORD: &[u8] = b"correct horse";
+
+    #[test]
+    fn golden_yhl2_vector_is_byte_stable() {
+        assert_eq!(
+            encrypt_local_with_nonce(GOLDEN_LOCAL_PLAINTEXT, &TEST_KEY, TEST_NONCE)
+                .expect("encryption succeeds"),
+            GOLDEN_YHL2
+        );
+        assert_eq!(
+            decrypt_local(GOLDEN_YHL2, &TEST_KEY).expect("decryption succeeds"),
+            GOLDEN_LOCAL_PLAINTEXT
+        );
+    }
+
+    #[test]
+    fn golden_yhp2_vector_is_byte_stable() {
+        assert_eq!(
+            encrypt_password_v2(
+                GOLDEN_BACKUP_PLAINTEXT.as_bytes(),
+                GOLDEN_PASSWORD,
+                TEST_SALT,
+                TEST_NONCE
+            )
+            .expect("encryption succeeds"),
+            GOLDEN_YHP2
+        );
+        assert_eq!(
+            decrypt_with_password_bytes(GOLDEN_YHP2, GOLDEN_PASSWORD).expect("decryption succeeds"),
+            GOLDEN_BACKUP_PLAINTEXT
+        );
+    }
+
+    #[test]
+    fn golden_legacy_vectors_remain_decryptable() {
+        assert_eq!(
+            decrypt_local(GOLDEN_LEGACY_LOCAL, &TEST_KEY).expect("legacy local decrypts"),
+            GOLDEN_LOCAL_PLAINTEXT
+        );
+        assert_eq!(
+            decrypt_with_password_bytes(GOLDEN_LEGACY_PASSWORD, GOLDEN_PASSWORD)
+                .expect("legacy password decrypts"),
+            GOLDEN_BACKUP_PLAINTEXT
+        );
+    }
+
+    #[test]
+    fn golden_yhp2_rejects_corruption_with_exact_errors() {
+        let decoded = BASE64.decode(GOLDEN_YHP2).expect("base64 is valid");
+        assert!(matches!(
+            decrypt_password_v2(&decoded[..20], GOLDEN_PASSWORD),
+            Err(CryptoError::InvalidFormat)
+        ));
+        let mut flipped_magic = decoded.clone();
+        flipped_magic[0] ^= 1;
+        assert!(matches!(
+            decrypt_password_v2(&flipped_magic, GOLDEN_PASSWORD),
+            Err(CryptoError::InvalidFormat)
+        ));
+        // The production dispatcher routes a non-YHP2 prefix to the legacy
+        // layout, whose tag then fails — a different error than the inner parser.
+        assert!(matches!(
+            decrypt_with_password_bytes(&BASE64.encode(&flipped_magic), GOLDEN_PASSWORD),
+            Err(CryptoError::Decryption)
+        ));
+        let mut flipped_tag = decoded.clone();
+        let last = flipped_tag.len() - 1;
+        flipped_tag[last] ^= 1;
+        assert!(matches!(
+            decrypt_password_v2(&flipped_tag, GOLDEN_PASSWORD),
+            Err(CryptoError::Decryption)
+        ));
+        assert!(matches!(
+            decrypt_with_password_bytes(&BASE64.encode(&flipped_tag), GOLDEN_PASSWORD),
+            Err(CryptoError::Decryption)
+        ));
+        assert!(matches!(
+            decrypt_with_password_bytes(&BASE64.encode(&decoded[..20]), GOLDEN_PASSWORD),
+            Err(CryptoError::InvalidFormat)
+        ));
+    }
+
+    #[test]
+    fn golden_yhl2_rejects_corruption_with_exact_errors() {
+        let decoded = BASE64.decode(GOLDEN_YHL2).expect("base64 is valid");
+        let truncated = &decoded[..LOCAL_FORMAT_MAGIC.len() + NONCE_LEN + TAG_LEN - 1];
+        assert!(matches!(
+            decrypt_local(&BASE64.encode(truncated), &TEST_KEY),
+            Err(CryptoError::InvalidFormat)
+        ));
+        let mut flipped_tag = decoded.clone();
+        let last = flipped_tag.len() - 1;
+        flipped_tag[last] ^= 1;
+        assert!(matches!(
+            decrypt_local(&BASE64.encode(&flipped_tag), &TEST_KEY),
+            Err(CryptoError::Decryption)
+        ));
+        // A flipped magic routes to the legacy layout, whose tag then fails too.
+        let mut flipped_magic = decoded;
+        flipped_magic[0] ^= 1;
+        assert!(matches!(
+            decrypt_local(&BASE64.encode(&flipped_magic), &TEST_KEY),
+            Err(CryptoError::Decryption)
+        ));
+    }
+
+    #[test]
+    fn oversized_local_plaintext_is_rejected_before_randomness() {
+        let oversized = "A".repeat(MAX_SECRET_BYTES + 1);
+        assert!(matches!(
+            encrypt_local(&oversized, &TEST_KEY),
+            Err(CryptoError::InputTooLarge)
+        ));
+        assert!(matches!(
+            encrypt_local_with_nonce(&oversized, &TEST_KEY, TEST_NONCE),
+            Err(CryptoError::InputTooLarge)
+        ));
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct VectorFixture {
+        #[serde(rename = "$comment")]
+        _comment: String,
+        key_base64: String,
+        nonce_base64: String,
+        salt_base64: String,
+        password: String,
+        argon2id: FixtureArgon2,
+        pbkdf2_iterations: u32,
+        vectors: Vec<GoldenVector>,
+        rejection_vectors: Vec<RejectionVector>,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct FixtureArgon2 {
+        memory_kib: u32,
+        iterations: u32,
+        parallelism: u32,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct GoldenVector {
+        format: String,
+        #[serde(rename = "description")]
+        _description: String,
+        plaintext: String,
+        ciphertext_base64: String,
+        decrypt_only: bool,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct RejectionVector {
+        format: String,
+        #[serde(rename = "description")]
+        _description: String,
+        ciphertext_base64: String,
+        expected: String,
+    }
+
+    fn load_vector_fixture() -> VectorFixture {
+        let raw = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../test/fixtures/crypto-vectors.json"
+        ))
+        .expect("fixture file exists");
+        serde_json::from_str(&raw).expect("fixture matches the typed schema")
+    }
+
+    #[test]
+    fn golden_vectors_match_shared_fixture_file() {
+        let fixture = load_vector_fixture();
+        assert_eq!(
+            BASE64.decode(&fixture.key_base64).expect("key decodes"),
+            TEST_KEY
+        );
+        assert_eq!(
+            BASE64.decode(&fixture.nonce_base64).expect("nonce decodes"),
+            TEST_NONCE
+        );
+        assert_eq!(
+            BASE64.decode(&fixture.salt_base64).expect("salt decodes"),
+            TEST_SALT
+        );
+        assert_eq!(
+            fixture.password.as_bytes(),
+            GOLDEN_PASSWORD,
+            "fixture password matches"
+        );
+        assert_eq!(fixture.argon2id.memory_kib, ARGON2_MEMORY_KIB);
+        assert_eq!(fixture.argon2id.iterations, ARGON2_ITERATIONS);
+        assert_eq!(fixture.argon2id.parallelism, ARGON2_PARALLELISM);
+        assert_eq!(fixture.pbkdf2_iterations, LEGACY_PBKDF2_ITERATIONS);
+        let expected = [
+            ("YHL2", GOLDEN_YHL2, GOLDEN_LOCAL_PLAINTEXT, false),
+            ("YHP2", GOLDEN_YHP2, GOLDEN_BACKUP_PLAINTEXT, false),
+            (
+                "legacy-local",
+                GOLDEN_LEGACY_LOCAL,
+                GOLDEN_LOCAL_PLAINTEXT,
+                true,
+            ),
+            (
+                "legacy-password",
+                GOLDEN_LEGACY_PASSWORD,
+                GOLDEN_BACKUP_PLAINTEXT,
+                true,
+            ),
+        ];
+        assert_eq!(fixture.vectors.len(), expected.len());
+        for (vector, (format, ciphertext, plaintext, decrypt_only)) in
+            fixture.vectors.iter().zip(expected)
+        {
+            assert_eq!(vector.format, format);
+            assert_eq!(vector.ciphertext_base64, ciphertext);
+            assert_eq!(vector.plaintext, plaintext);
+            assert_eq!(vector.decrypt_only, decrypt_only);
+        }
+    }
+
+    #[test]
+    fn shared_rejection_vectors_fail_through_production_dispatch() {
+        let fixture = load_vector_fixture();
+        assert!(!fixture.rejection_vectors.is_empty());
+        for vector in &fixture.rejection_vectors {
+            let result = match vector.format.as_str() {
+                "YHL2" | "legacy-local" => decrypt_local(&vector.ciphertext_base64, &TEST_KEY),
+                "YHP2" | "legacy-password" => {
+                    decrypt_with_password_bytes(&vector.ciphertext_base64, GOLDEN_PASSWORD)
+                }
+                other => panic!("unknown rejection vector format: {other}"),
+            };
+            match vector.expected.as_str() {
+                "invalid-format" => assert!(
+                    matches!(result, Err(CryptoError::InvalidFormat)),
+                    "expected InvalidFormat for {}",
+                    vector.ciphertext_base64
+                ),
+                "auth-failure" => assert!(
+                    matches!(result, Err(CryptoError::Decryption)),
+                    "expected Decryption for {}",
+                    vector.ciphertext_base64
+                ),
+                other => panic!("unknown expected outcome: {other}"),
+            }
+        }
     }
 
     #[test]

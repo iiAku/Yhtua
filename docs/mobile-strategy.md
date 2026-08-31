@@ -1,72 +1,43 @@
-# Mobile strategy (planning note)
+# Mobile strategy (decision record)
 
-Status: exploratory; Yhtua 2.8 supports desktop only. Last reviewed: 2026-07-31.
+Status: **decided — Expo/React Native, iOS-first**. Last reviewed: 2026-08-31.
 
-Mobile framework capabilities, store policies, pricing, and ecosystem maturity change frequently. Revalidate this note against current primary documentation before committing to an implementation or budget.
+This supersedes the previous version of this note, which recommended a Tauri 2 mobile spike with React Native as fallback. The decision flipped after four adversarial review rounds (independent Codex reviewer) weighing long-term maintenance, transferable skills, and the actual reuse economics: the maintainer plans further mobile apps (Expo/RN skills transfer; Tauri-mobile skills mostly don't), accepts the UI rewrite cost, and the supposed Tauri "reuse" advantage shrank on inspection — the desktop keyring path, folder-sync path model, lifecycle privacy, and store CI all required native-grade mobile work regardless of framework.
 
-## Non-negotiable security requirements
+## Decisions (fixed)
 
-A mobile client must preserve the desktop format and threat-model properties:
+- **Framework**: Expo/React Native. **Deliverable v1 is iOS-only**; Android is a declared follow-up plan (Kotlin Keystore adapter, Android biometric policy, backup exclusion, SAF import/export, Play signing, physical-device acceptance), not an implicit outcome.
+- **Desktop stays Tauri + Vue untouched** (option A). A React DOM desktop rewrite is rejected: React Native shares no components with React DOM, so it would rewrite a working app for vocabulary, not reuse. A later single-codebase consolidation (react-native-web inside Tauri) remains open, gated on a vertical-slice parity test (keyboard, accessibility, IPC, modals) — evidence, not vibes.
+- **Monorepo**: `crates/` (platform-neutral Rust), `packages/` (framework-neutral TS domain), `apps/mobile` (Expo) in this repository, bun workspaces.
+- **Crypto boundary (non-negotiable)**: the encryption key and the biometric authorization decision never touch JavaScript. Rust crypto reaches mobile as a UniFFI-bound native Expo Module exposing narrow, auth-bound operations (`decryptSecret`, never `getRawKey`), with the key bound to biometrics in the Keychain item itself (`SecAccessControl(.biometryCurrentSet)`, `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, no iCloud sync) and held in an opaque native session, zeroized on close and on backgrounding.
+- **One source of truth per format layer**: binary envelope parsing (`YHL2`, `YHP2`, legacy PBKDF2) lives only in the Rust crate; the TS domain package owns only JSON-level schemas and policy. Golden byte-exact vectors (`test/fixtures/crypto-vectors.json`, mirrored in `src-tauri/src/crypto.rs` tests) are the compatibility contract for every implementation.
+- **Migration**: password-encrypted YHP2 export/import is the **only** desktop↔mobile path. Local `YHL2` ciphertext is bound to a per-install key and cannot move between devices by design.
+- **Mobile v1 scope**: local vault, YHP2 import/export, native biometric gating, native lifecycle locking (suspend lock, app-switcher snapshot masking), sensitive-flagged clipboard (`UIPasteboard` localOnly + expiration). **No folder sync** (the desktop absolute-path model does not map to iOS security-scoped URLs). **No OTA JS updates, ever** — signed store binaries only; each release artifact is inspected to confirm `expo-updates` is absent.
+- **Toolchain reality**: maintainer develops on Linux. UI iteration via Expo Go on a real iPhone; native builds via EAS cloud (pinned Rust toolchain, locked uniffi-bindgen, frozen lockfile); a macOS CI job building the XCFramework and running golden-vector XCTests is the authoritative bridge gate. Apple Developer account purchased when the native-module phase needs device installs.
+
+## Security requirements (unchanged from the previous note)
+
+A mobile client preserves the desktop format and threat-model properties:
 
 - new local ciphertext uses the authenticated `YHL2` AES-256-GCM format;
-- new portable backups use the `YHP2` Argon2id (64 MiB, 3 passes, 1 lane) plus AES-256-GCM format;
-- supported PBKDF2/AES-GCM files remain read-compatible only;
-- encryption keys use Keychain/Keystore-backed storage and fail closed when secure storage is unavailable;
+- new portable backups use the `YHP2` Argon2id (64 MiB, 3 passes, 1 lane) + AES-256-GCM format;
+- PBKDF2/AES-GCM files remain read-compatible only;
+- encryption keys use Keychain-backed storage and fail closed when secure storage is unavailable;
 - no secret, key, password, or generated code enters logs, analytics, URLs, crash metadata, or unencrypted persistence;
 - biometric access gates secure-key use rather than replacing encryption;
-- import, clipboard, backgrounding, screenshots, backup, and sync receive platform-specific abuse tests.
+- import, clipboard, backgrounding, screenshots, backup, and store distribution receive platform-specific abuse tests before advertising mobile support.
 
-The current formats are documented in [backup-format.md](backup-format.md). There is no separate HMAC layer: AES-GCM supplies ciphertext integrity, and version 2.3 repeats sync metadata inside the authenticated plaintext.
+Formats are documented in [backup-format.md](backup-format.md). AES-GCM supplies ciphertext integrity; version 2.3 repeats sync metadata inside the authenticated plaintext.
 
-## Options to prototype
+## Execution
 
-### Tauri 2 mobile
-
-Tauri officially documents Android and iOS targets, store distribution, mobile plugins, capabilities, biometrics, clipboard, and deep links. This path maximizes reuse of the current Vue UI, Rust commands, schemas, and capability model. It still requires device testing across WebView versions and a review of each plugin's mobile implementation and secure-storage behavior.
-
-Start here for the smallest proof of concept, but do not infer production readiness from desktop test results. iOS development still requires macOS and Xcode.
-
-### React Native with Expo
-
-Expo provides documented SecureStore, LocalAuthentication, and Clipboard modules and managed build/update services. It offers a broad mobile-oriented API surface but requires a Vue-to-React UI rewrite and either a reviewed native bridge to Rust or a separate cryptographic implementation. SecureStore persistence, biometric invalidation, backup behavior, and platform limits must be tested explicitly.
-
-### Kotlin/Compose Multiplatform
-
-This offers native Android integration and shared Kotlin UI/business code, with an iOS target and a possible UniFFI bridge to Rust. It is a larger rewrite and introduces Kotlin/Gradle and native bridge maintenance. Consider it when native UI control outweighs reuse of the existing frontend.
-
-### Flutter
-
-Flutter also implies a full UI rewrite and a maintained Dart-to-Rust bridge if the existing format implementation is retained. Do not reimplement the cryptographic formats solely to accommodate a framework choice.
-
-## Recommended decision process
-
-1. Extract format/crypto primitives from `src-tauri/src/crypto.rs` into a platform-neutral Rust crate without keychain, filesystem, logging, or Tauri dependencies.
-2. Build a time-boxed Tauri mobile spike covering Keychain/Keystore access, biometric gating, background secret clearing, clipboard ownership, import/export, and one real iOS and Android device.
-3. In parallel, validate a minimal Expo native bridge only if the Tauri spike exposes a blocking WebView, plugin, accessibility, or store-distribution issue.
-4. Compare measured startup time, binary size, accessibility, device coverage, maintenance burden, and security-test results. Do not decide from ecosystem popularity claims.
-5. Add mobile CI, signing, store privacy disclosures, migration tests, and a separate threat-model review before advertising mobile support.
-
-## Shared Rust crate boundary
-
-A future shared crate should expose typed operations such as:
-
-- random-key generation;
-- local `YHL2` encrypt/decrypt;
-- portable `YHP2` encrypt/decrypt;
-- legacy PBKDF2 backup decryption;
-- strict envelope parsing and format-version errors.
-
-Keychain/Keystore access, biometrics, file selection, clipboard, lifecycle, and UI remain platform adapters. Keep secret-bearing arguments out of generic error text and zeroize Rust buffers where practical.
-
-## Updates and store policy
-
-The default release channel should remain signed store updates. Do not enable executable over-the-air updates until their integrity, rollback, disclosure, and review-policy implications have been assessed. Apple's current App Review Guideline 2.5.2 restricts downloaded code that changes app functionality, so any update mechanism must be reviewed against the policy in force at submission time.
+The implementation runs in 8 phases (golden-vector pinning → Rust crate extraction → TS domain package → lock-state machine → Expo scaffold with mocked crypto port → UniFFI/Expo-Module bridge in three sub-gates → v1 features → EAS/TestFlight). Each phase ends with an adversarial review gate; desktop CI stays green and a desktop release stays cuttable at every merge. Phase 1 (golden vectors + this decision record) landed with this document.
 
 ## Primary references
 
-- [Tauri prerequisites and mobile target setup](https://v2.tauri.app/start/prerequisites/)
-- [Tauri mobile plugin development](https://v2.tauri.app/develop/plugins/develop-mobile/)
-- [Expo SecureStore](https://docs.expo.dev/versions/latest/sdk/securestore/)
-- [Expo LocalAuthentication](https://docs.expo.dev/versions/latest/sdk/local-authentication/)
-- [Expo Clipboard](https://docs.expo.dev/versions/latest/sdk/clipboard/)
+- [Expo documentation](https://docs.expo.dev/)
+- [Expo Modules API](https://docs.expo.dev/modules/module-api/)
+- [Expo SecureStore](https://docs.expo.dev/versions/latest/sdk/securestore/) (not used for the vault key — Keychain access is owned by the native module)
+- [UniFFI](https://mozilla.github.io/uniffi-rs/)
 - [Apple App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/)
+- [Apple Keychain access control](https://developer.apple.com/documentation/security/secaccesscontrol)

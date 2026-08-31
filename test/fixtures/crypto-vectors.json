@@ -1,0 +1,89 @@
+{
+  "$comment": "Golden test vectors for Yhtua's crypto formats, pinned from the shipping implementation (v2.8.2). Byte-exact compatibility contract for every implementation (Rust crate, mobile bridge, device self-test). Never regenerate to make a failing test pass — a mismatch IS a format break. Synthetic key and secrets only. Kept in sync with src-tauri/src/crypto.rs by the golden_vectors_match_shared_fixture_file test.",
+  "key_base64": "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=",
+  "nonce_base64": "JCQkJCQkJCQkJCQk",
+  "salt_base64": "EREREREREREREREREREREQ==",
+  "password": "correct horse",
+  "argon2id": { "memory_kib": 65536, "iterations": 3, "parallelism": 1 },
+  "pbkdf2_iterations": 600000,
+  "vectors": [
+    {
+      "format": "YHL2",
+      "description": "Local secret: 'YHL2' || nonce(12) || AES-256-GCM(ct||tag), AAD 'yhtua-local-secret-v2', keychain key",
+      "plaintext": "JBSWY3DPEHPK3PXP",
+      "ciphertext_base64": "WUhMMiQkJCQkJCQkJCQkJF/Tlxaw9YJuY6By4Y5iy/b4IlzcQVnWIotANO65HLhR",
+      "decrypt_only": false
+    },
+    {
+      "format": "YHP2",
+      "description": "Portable backup: 'YHP2' || salt(16) || nonce(12) || AES-256-GCM(ct||tag), AAD 'yhtua-password-backup-v2', Argon2id key",
+      "plaintext": "example backup",
+      "ciphertext_base64": "WUhQMhEREREREREREREREREREREkJCQkJCQkJCQkJCTw0CgTeOc6O0lgi4shRu19E9mEq1BkZjXFYaEVZU8=",
+      "decrypt_only": false
+    },
+    {
+      "format": "legacy-local",
+      "description": "Pre-2.8 local secret: nonce(12) || AES-256-GCM(ct||tag), empty AAD. Read-compatible only",
+      "plaintext": "JBSWY3DPEHPK3PXP",
+      "ciphertext_base64": "JCQkJCQkJCQkJCQkX9OXFrD1gm5joHLhjmLL9hJc5PhZzQnBadES2QRoq4c=",
+      "decrypt_only": true
+    },
+    {
+      "format": "legacy-password",
+      "description": "Pre-2.8 backup: salt(16) || nonce(12) || AES-256-GCM(ct||tag), empty AAD, PBKDF2-HMAC-SHA256 600k. Read-compatible only",
+      "plaintext": "example backup",
+      "ciphertext_base64": "ERERERERERERERERERERESQkJCQkJCQkJCQkJAV3G/AUdzdJwflpqAesx/K3bmL5v9C1XxRf/lZKtA==",
+      "decrypt_only": true
+    }
+  ],
+  "rejection_vectors": [
+    {
+      "format": "YHL2",
+      "description": "Golden YHL2 truncated to magic+nonce+tag-1 bytes; every consumer must reject as malformed",
+      "ciphertext_base64": "WUhMMiQkJCQkJCQkJCQkJF/Tlxaw9YJuY6By4Y5iyw==",
+      "expected": "invalid-format"
+    },
+    {
+      "format": "YHL2",
+      "description": "Golden YHL2 with the last auth-tag byte flipped; must fail authentication",
+      "ciphertext_base64": "WUhMMiQkJCQkJCQkJCQkJF/Tlxaw9YJuY6By4Y5iy/b4IlzcQVnWIotANO65HLhQ",
+      "expected": "auth-failure"
+    },
+    {
+      "format": "YHL2",
+      "description": "Golden YHL2 with the first magic byte flipped; routes to the legacy layout and must fail authentication there",
+      "ciphertext_base64": "WEhMMiQkJCQkJCQkJCQkJF/Tlxaw9YJuY6By4Y5iy/b4IlzcQVnWIotANO65HLhR",
+      "expected": "auth-failure"
+    },
+    {
+      "format": "YHP2",
+      "description": "Golden YHP2 truncated to 20 bytes (magic intact); every consumer must reject as malformed",
+      "ciphertext_base64": "WUhQMhERERERERERERERERERERE=",
+      "expected": "invalid-format"
+    },
+    {
+      "format": "YHP2",
+      "description": "Golden YHP2 with the last auth-tag byte flipped; must fail authentication",
+      "ciphertext_base64": "WUhQMhEREREREREREREREREREREkJCQkJCQkJCQkJCTw0CgTeOc6O0lgi4shRu19E9mEq1BkZjXFYaEVZU4=",
+      "expected": "auth-failure"
+    },
+    {
+      "format": "YHP2",
+      "description": "Golden YHP2 with the first magic byte flipped; routes to the legacy layout and must fail authentication there",
+      "ciphertext_base64": "WEhQMhEREREREREREREREREREREkJCQkJCQkJCQkJCTw0CgTeOc6O0lgi4shRu19E9mEq1BkZjXFYaEVZU8=",
+      "expected": "auth-failure"
+    },
+    {
+      "format": "legacy-local",
+      "description": "Golden legacy-local with the last auth-tag byte flipped; must fail authentication",
+      "ciphertext_base64": "JCQkJCQkJCQkJCQkX9OXFrD1gm5joHLhjmLL9hJc5PhZzQnBadES2QRoq4Y=",
+      "expected": "auth-failure"
+    },
+    {
+      "format": "legacy-password",
+      "description": "Golden legacy-password with the last auth-tag byte flipped; must fail authentication",
+      "ciphertext_base64": "ERERERERERERERERERERESQkJCQkJCQkJCQkJAV3G/AUdzdJwflpqAesx/K3bmL5v9C1XxRf/lZKtQ==",
+      "expected": "auth-failure"
+    }
+  ]
+}
