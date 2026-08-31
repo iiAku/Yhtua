@@ -24,7 +24,7 @@
     "format:check": "oxfmt --check",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "typecheck": "nuxi typecheck && bun run --cwd packages/domain typecheck",
+    "typecheck": "nuxi typecheck && bun run --cwd packages/domain typecheck && bun run --cwd apps/mobile typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
     "check:version": "bun scripts/check-version.ts",

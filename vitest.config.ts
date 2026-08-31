@@ -28,6 +28,15 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'mobile',
+          environment: 'node',
+          restoreMocks: true,
+          clearMocks: true,
+          include: ['apps/mobile/test/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           // Node environment on purpose: the domain package must never rely on
           // DOM globals, or it breaks under React Native's Hermes runtime.
           name: 'domain',
