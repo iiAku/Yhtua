@@ -22,8 +22,16 @@ Pod::Spec.new do |s|
   s.resource_bundles = { 'YhtuaVaultPrivacy' => ['PrivacyInfo.xcprivacy'] }
   s.vendored_frameworks = 'rust/YhtuaMobile.xcframework'
 
+  # The generated bindings guard the FFI types behind
+  # `#if canImport(yhtua_mobileFFI)`; without these include paths the import
+  # silently fails and every RustBuffer/RustCallStatus reference breaks. The
+  # module.modulemap lives in the vendored XCFramework's per-slice Headers.
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'SWIFT_COMPILATION_MODE' => 'wholemodule'
+    'SWIFT_COMPILATION_MODE' => 'wholemodule',
+    'SWIFT_INCLUDE_PATHS[sdk=iphoneos*]' => '$(PODS_TARGET_SRCROOT)/rust/YhtuaMobile.xcframework/ios-arm64/Headers',
+    'SWIFT_INCLUDE_PATHS[sdk=iphonesimulator*]' => '$(PODS_TARGET_SRCROOT)/rust/YhtuaMobile.xcframework/ios-arm64-simulator/Headers',
+    'HEADER_SEARCH_PATHS[sdk=iphoneos*]' => '$(PODS_TARGET_SRCROOT)/rust/YhtuaMobile.xcframework/ios-arm64/Headers',
+    'HEADER_SEARCH_PATHS[sdk=iphonesimulator*]' => '$(PODS_TARGET_SRCROOT)/rust/YhtuaMobile.xcframework/ios-arm64-simulator/Headers'
   }
 end
