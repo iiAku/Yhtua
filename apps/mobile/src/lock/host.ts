@@ -26,6 +26,14 @@ const LOCK_CONFIG: LockConfig = {
 
 type Listener = (state: LockState) => void
 
+/** The lock machine's contract requires MONOTONIC elapsed durations: a wall
+ * clock can be moved by the user or by NTP, which would let a long absence
+ * look short. performance.now() is monotonic in Hermes. */
+const monotonicNow = (): number =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+
 let machine: LockMachine = initialLockMachine()
 let idleTimer: ReturnType<typeof setTimeout> | undefined
 let backgroundedAt: number | null = null
@@ -117,14 +125,15 @@ export const requestUnlock = async () => {
 }
 
 const onAppStateChange = (status: AppStateStatus) => {
-  // iOS fires 'inactive' for the biometric sheet and control-center pulls;
-  // only 'background' is a real backgrounding. The machine additionally
-  // protects itself even if this mapping is wrong.
+  // iOS fires 'inactive' for the biometric sheet, control-center pulls and the
+  // app switcher, then 'active' again when they are dismissed. Only a RECORDED
+  // real backgrounding may produce APP_FOREGROUNDED: under the zero-grace
+  // config an unpaired 'active' would otherwise lock the app on every blip.
   if (status === 'background') {
-    backgroundedAt = Date.now()
+    backgroundedAt = monotonicNow()
     dispatch({ type: 'APP_BACKGROUNDED' })
-  } else if (status === 'active') {
-    const elapsedMs = backgroundedAt === null ? 0 : Date.now() - backgroundedAt
+  } else if (status === 'active' && backgroundedAt !== null) {
+    const elapsedMs = monotonicNow() - backgroundedAt
     backgroundedAt = null
     dispatch({ type: 'APP_FOREGROUNDED', elapsedMs })
   }
@@ -136,7 +145,7 @@ export const startLockHost = async () => {
 
   AppState.addEventListener('change', onAppStateChange)
   if (AppState.currentState === 'background') {
-    backgroundedAt = Date.now()
+    backgroundedAt = monotonicNow()
     dispatch({ type: 'APP_BACKGROUNDED' })
   }
 
@@ -154,6 +163,9 @@ export const startLockHost = async () => {
   } catch {
     hasKey = false
   }
-  const hasVault = vaultStore.getState().tokens.length > 0
+  // Tombstones alone still mean an INITIALIZED vault: a user who deleted every
+  // token must not be handed a fresh unlocked vault on the next launch.
+  const persisted = vaultStore.getState()
+  const hasVault = persisted.tokens.length > 0 || persisted.tombstones.length > 0
   dispatch({ type: 'HYDRATION_COMPLETE', hasVault, hasKey })
 }

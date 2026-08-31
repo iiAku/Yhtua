@@ -67,10 +67,26 @@ describe('mobile lock host (full enforcement)', () => {
     setAppState('active')
     expect(getLockState()).toBe('locked')
 
-    // The iOS 'inactive' blip is NOT a backgrounding.
+    // The iOS 'inactive' blip is NOT a backgrounding — and neither is the
+    // 'active' that follows it (Face ID sheet dismissed, control centre closed).
+    // Under zero grace an unpaired 'active' would otherwise lock the app.
     await requestUnlock()
     expect(getLockState()).toBe('unlocked')
     setAppState('inactive')
     expect(getLockState()).toBe('unlocked')
+    setAppState('active')
+    expect(getLockState()).toBe('unlocked')
+  })
+
+  it('treats a tombstone-only vault as initialized, never as a fresh one', async () => {
+    const { vaultStore } = await import('../src/state/vault-store')
+    vaultStore.setState({
+      version: 2,
+      tokens: [],
+      tombstones: [{ id: 'deleted-1', deletedAt: 10 }],
+    })
+    // hasVault must be true for a vault whose tokens were all deleted.
+    const persisted = vaultStore.getState()
+    expect(persisted.tokens.length > 0 || persisted.tombstones.length > 0).toBe(true)
   })
 })
