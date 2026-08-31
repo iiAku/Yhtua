@@ -1,0 +1,91 @@
+name: Mobile bridge
+
+# The AUTHORITATIVE gate for the Rust -> Swift bridge (plan phase 6a): if this
+# job is green, the crypto crate cross-compiles for iOS, the UniFFI Swift
+# bindings generate, real Swift code executes every golden vector through the
+# Rust static library, and the XCFramework packages. EAS is only a packaging
+# step behind this gate.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'bridge/**'
+      - 'scripts/build-ios-rust.sh'
+      - 'test/fixtures/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'apps/mobile/modules/**'
+      - 'apps/mobile/app.json'
+      - 'apps/mobile/eas.json'
+      - '.github/workflows/mobile-bridge.yml'
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'bridge/**'
+      - 'scripts/build-ios-rust.sh'
+      - 'test/fixtures/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'apps/mobile/modules/**'
+      - 'apps/mobile/app.json'
+      - 'apps/mobile/eas.json'
+      - '.github/workflows/mobile-bridge.yml'
+
+concurrency:
+  group: bridge-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bridge:
+    name: Rust -> Swift golden gate
+    runs-on: macos-14
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Rust (pinned by rust-toolchain.toml)
+        run: rustup show active-toolchain
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: . -> target
+      - name: Test the FFI surface against the golden vectors
+        run: cargo test -p yhtua-mobile --locked
+      - name: Build the native static library for the runner
+        run: cargo build -p yhtua-mobile --release --locked
+      - name: Generate Swift bindings (locked workspace bindgen)
+        run: |
+          cargo run -p yhtua-mobile --features bindgen --bin uniffi-bindgen --locked -- \
+            generate \
+            --library target/release/libyhtua_mobile.a \
+            --language swift \
+            --out-dir bridge/generated
+          cp bridge/generated/yhtua_mobileFFI.modulemap bridge/generated/module.modulemap
+      - name: Run the golden vectors through Swift -> Rust
+        run: |
+          swiftc -O \
+            bridge/ios/GoldenVectorRunner/main.swift \
+            bridge/generated/yhtua_mobile.swift \
+            -I bridge/generated \
+            -L target/release -lyhtua_mobile \
+            -o bridge/golden-vector-runner
+          ./bridge/golden-vector-runner test/fixtures/crypto-vectors.json
+      - name: Build the iOS XCFramework
+        run: bash scripts/build-ios-rust.sh "$RUNNER_TEMP/yhtua-vault-ios"
+      - name: Compile an iOS-simulator consumer against the packaged unit
+        run: |
+          xcrun -sdk iphonesimulator swiftc -c \
+            -target arm64-apple-ios15.1-simulator \
+            "$RUNNER_TEMP/yhtua-vault-ios/bindings/yhtua_mobile.swift" \
+            bridge/ios/ConsumerCheck/consumer.swift \
+            -I "$RUNNER_TEMP/yhtua-vault-ios/YhtuaMobile.xcframework/ios-arm64-simulator/Headers" \
+            -o /dev/null
+      - name: Upload XCFramework artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: YhtuaMobile.xcframework
+          path: ${{ runner.temp }}/yhtua-vault-ios/YhtuaMobile.xcframework
+          if-no-files-found: error

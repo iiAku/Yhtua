@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["src-tauri", "crates/yhtua-crypto"]
+members = ["src-tauri", "crates/yhtua-crypto", "crates/yhtua-mobile"]
 # The fuzz crate stays standalone: cargo-fuzz manages its own profiles and it
 # path-depends into the workspace, which works from an excluded crate.
 exclude = ["src-tauri/fuzz"]
@@ -19,6 +19,7 @@ base64 = "0.23"
 argon2 = { version = "0.5.3", features = ["zeroize"] }
 zeroize = { version = "1.9", features = ["derive"] }
 thiserror = "2"
+uniffi = "0.32"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 

@@ -15,3 +15,15 @@ For every update:
 JavaScript `overrides` are limited to patched versions compatible with all requesting packages. A clean build/test plus `bun why` review is required whenever an override changes.
 
 The repository pins the current Rust stable toolchain (`1.93.1`) in CI and declares the same MSRV. TypeScript is held to the newest compatible major (`6.x`): TypeScript 7 removes the compiler subpath currently required by `vue-tsc` 3.3.8. Re-test and remove this hold when Vue language tooling adds TypeScript 7 support.
+
+## Documented JavaScript advisory ignores
+
+Mirrors the RUSTSEC ignore pattern in `deny.toml`: every ignored advisory
+needs a reason here and a revisit condition.
+
+- `GHSA-w3rx-r6r6-pgpr`, `GHSA-5p2g-fcmc-qvqq` (`image-size` <= 2.0.2, DoS
+  via crafted ICNS/JXL/HEIF images): transitive via Metro inside the pinned
+  Expo SDK; no fixed release satisfies Metro's range, and the parser only
+  runs at development bundle time on files already in the repository.
+  Revisit on every Expo SDK upgrade and drop the ignore once Metro moves to
+  image-size >= 2.0.3.
