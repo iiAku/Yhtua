@@ -5594,13 +5594,11 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 name = "yhtua"
 version = "2.8.2"
 dependencies = [
- "argon2",
  "atomic-write-file",
  "base64 0.23.0",
  "dirs",
  "keyring",
  "log",
- "ring",
  "serde",
  "serde_json",
  "tauri",
@@ -5610,6 +5608,20 @@ dependencies = [
  "tauri-plugin-log",
  "thiserror 2.0.19",
  "whoami",
+ "yhtua-crypto",
+ "zeroize",
+]
+
+[[package]]
+name = "yhtua-crypto"
+version = "2.8.2"
+dependencies = [
+ "argon2",
+ "base64 0.23.0",
+ "ring",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
  "zeroize",
 ]
 

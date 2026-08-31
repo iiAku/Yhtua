@@ -8,7 +8,7 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
-app-lib = { package = "yhtua", path = "..", features = ["fuzzing"] }
+yhtua-crypto = { path = "../../crates/yhtua-crypto", features = ["fuzzing"] }
 libfuzzer-sys = "0.4.13"
 
 [[bin]]
@@ -17,3 +17,5 @@ path = "fuzz_targets/local_ciphertext.rs"
 test = false
 doc = false
 bench = false
+
+[workspace]

@@ -7,7 +7,7 @@ set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 project_root=$(dirname -- "$script_dir")
-bundle_dir="$project_root/src-tauri/target/release/bundle/appimage"
+bundle_dir="$project_root/target/release/bundle/appimage"
 
 if (( $# > 1 )); then
   echo "Usage: $0 [path-to-AppImage]" >&2

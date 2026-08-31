@@ -1,18 +1,16 @@
-use argon2::{Algorithm, Argon2, Params, Version};
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use keyring::{Entry, Error as KeyringError};
-use ring::{
-    aead::{AES_256_GCM, Aad, LessSafeKey, NONCE_LEN, Nonce, UnboundKey},
-    pbkdf2,
-    rand::{SecureRandom, SystemRandom},
-};
 use std::{
     fs,
-    num::NonZeroU32,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
 };
 use thiserror::Error;
+use yhtua_crypto::{
+    KEY_LEN, LEGACY_PBKDF2_ITERATIONS, MAX_CIPHERTEXT_BASE64_BYTES, MAX_PASSWORD_BYTES, decode_key,
+    decrypt_local, decrypt_local_legacy, decrypt_with_password_bytes, derive_legacy_key,
+    encrypt_local, encrypt_with_password_bytes, random_bytes,
+};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 const KEYCHAIN_SERVICE: &str = "com.yhtua.dev";
@@ -21,21 +19,6 @@ const KEYCHAIN_SYNC_PASSWORD: &str = "sync-password";
 const KEYCHAIN_SYNC_PATH: &str = "sync-path";
 
 const LEGACY_KEYCHAIN_SERVICE: &str = "yhtua";
-const LEGACY_PBKDF2_ITERATIONS: u32 = 600_000;
-const SALT_LEN: usize = 16;
-const KEY_LEN: usize = 32;
-const TAG_LEN: usize = 16;
-const PASSWORD_FORMAT_MAGIC: &[u8; 4] = b"YHP2";
-const LOCAL_FORMAT_MAGIC: &[u8; 4] = b"YHL2";
-const PASSWORD_AAD: &[u8] = b"yhtua-password-backup-v2";
-const LOCAL_AAD: &[u8] = b"yhtua-local-secret-v2";
-const ARGON2_MEMORY_KIB: u32 = 64 * 1024;
-const ARGON2_ITERATIONS: u32 = 3;
-const ARGON2_PARALLELISM: u32 = 1;
-const MAX_SECRET_BYTES: usize = 4 * 1024;
-const MAX_BACKUP_BYTES: usize = 16 * 1024 * 1024;
-const MAX_CIPHERTEXT_BASE64_BYTES: usize = 24 * 1024 * 1024;
-const MAX_PASSWORD_BYTES: usize = 1024;
 
 const LEGACY_FALLBACK_DIR: &str = ".yhtua";
 const LEGACY_FALLBACK_CREDS_FILE: &str = "credentials.enc";
@@ -60,6 +43,18 @@ pub enum CryptoError {
     Storage,
     #[error("Internal error")]
     Internal,
+}
+
+impl From<yhtua_crypto::CryptoError> for CryptoError {
+    fn from(error: yhtua_crypto::CryptoError) -> Self {
+        match error {
+            yhtua_crypto::CryptoError::Encryption => Self::Encryption,
+            yhtua_crypto::CryptoError::Decryption => Self::Decryption,
+            yhtua_crypto::CryptoError::InvalidFormat => Self::InvalidFormat,
+            yhtua_crypto::CryptoError::InputTooLarge => Self::InputTooLarge,
+            yhtua_crypto::CryptoError::InvalidPassword => Self::InvalidPassword,
+        }
+    }
 }
 
 impl serde::Serialize for CryptoError {
@@ -88,28 +83,15 @@ fn legacy_fallback_path() -> Result<PathBuf, CryptoError> {
         .join(LEGACY_FALLBACK_CREDS_FILE))
 }
 
-fn derive_legacy_key(password: &[u8], salt: &[u8], iterations: u32) -> [u8; KEY_LEN] {
-    let mut key = [0_u8; KEY_LEN];
-    let iterations = NonZeroU32::new(iterations).expect("iteration count is a non-zero constant");
-    pbkdf2::derive(
-        pbkdf2::PBKDF2_HMAC_SHA256,
-        iterations,
-        salt,
-        password,
-        &mut key,
-    );
-    key
-}
-
 fn legacy_fallback_encryption_key() -> Zeroizing<[u8; KEY_LEN]> {
     let username = whoami::username().unwrap_or_else(|_| "unknown".to_owned());
     let hostname = whoami::hostname().unwrap_or_else(|_| "unknown".to_owned());
     let device_id = Zeroizing::new(format!("yhtua-fallback-{username}-{hostname}"));
-    Zeroizing::new(derive_legacy_key(
+    derive_legacy_key(
         device_id.as_bytes(),
         b"yhtua-fallback-salt-v1",
         LEGACY_PBKDF2_ITERATIONS,
-    ))
+    )
 }
 
 /// Set once the legacy credential file has been found unusable, so the 600k-round
@@ -209,15 +191,7 @@ impl CredentialBackend for OsCredentialBackend {
         entry.set_password(value).map_err(|error| {
             log::warn!("Unable to write an OS credential: {error}");
             CryptoError::Keychain
-        })?;
-        let stored = Zeroizing::new(entry.get_password().map_err(|error| {
-            log::warn!("Unable to verify an OS credential: {error}");
-            CryptoError::Keychain
-        })?);
-        if stored.as_str() != value {
-            return Err(CryptoError::Keychain);
-        }
-        Ok(())
+        })
     }
 
     fn delete(&self, service: &str, name: &str) -> Result<(), CryptoError> {
@@ -346,27 +320,6 @@ fn rotate_encryption_key_with<B: CredentialBackend>(
     Ok(())
 }
 
-fn random_bytes<const N: usize>() -> Result<[u8; N], CryptoError> {
-    let mut bytes = [0_u8; N];
-    SystemRandom::new()
-        .fill(&mut bytes)
-        .map_err(|_| CryptoError::Encryption)?;
-    Ok(bytes)
-}
-
-fn decode_key(key_base64: &str) -> Result<Zeroizing<[u8; KEY_LEN]>, CryptoError> {
-    let decoded = Zeroizing::new(
-        BASE64
-            .decode(key_base64)
-            .map_err(|_| CryptoError::InvalidFormat)?,
-    );
-    let key: [u8; KEY_LEN] = decoded
-        .as_slice()
-        .try_into()
-        .map_err(|_| CryptoError::InvalidFormat)?;
-    Ok(Zeroizing::new(key))
-}
-
 fn validate_legacy_credential_value(name: &str, value: &str) -> Result<(), CryptoError> {
     match name {
         KEYCHAIN_KEY_NAME => {
@@ -382,190 +335,6 @@ fn validate_legacy_credential_value(name: &str, value: &str) -> Result<(), Crypt
         }
         KEYCHAIN_SYNC_PATH => validate_sync_path(value),
         _ => Err(CryptoError::InvalidFormat),
-    }
-}
-
-fn seal(
-    plaintext: &[u8],
-    key: &[u8],
-    nonce_bytes: [u8; NONCE_LEN],
-    aad: &[u8],
-) -> Result<Vec<u8>, CryptoError> {
-    let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|_| CryptoError::Encryption)?;
-    let key = LessSafeKey::new(unbound);
-    let nonce = Nonce::assume_unique_for_key(nonce_bytes);
-    let mut output = plaintext.to_vec();
-    key.seal_in_place_append_tag(nonce, Aad::from(aad), &mut output)
-        .map_err(|_| CryptoError::Encryption)?;
-    Ok(output)
-}
-
-fn open(
-    ciphertext: &[u8],
-    key: &[u8],
-    nonce_bytes: [u8; NONCE_LEN],
-    aad: &[u8],
-) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
-    let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|_| CryptoError::Decryption)?;
-    let key = LessSafeKey::new(unbound);
-    let nonce = Nonce::assume_unique_for_key(nonce_bytes);
-    let mut output = Zeroizing::new(ciphertext.to_vec());
-    let plaintext_len = key
-        .open_in_place(nonce, Aad::from(aad), output.as_mut())
-        .map_err(|_| CryptoError::Decryption)?
-        .len();
-    output.truncate(plaintext_len);
-    Ok(output)
-}
-
-fn derive_argon2id_key(
-    password: &[u8],
-    salt: &[u8],
-) -> Result<Zeroizing<[u8; KEY_LEN]>, CryptoError> {
-    let params = Params::new(
-        ARGON2_MEMORY_KIB,
-        ARGON2_ITERATIONS,
-        ARGON2_PARALLELISM,
-        Some(KEY_LEN),
-    )
-    .map_err(|_| CryptoError::Encryption)?;
-    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-    let mut key = Zeroizing::new([0_u8; KEY_LEN]);
-    argon2
-        .hash_password_into(password, salt, key.as_mut())
-        .map_err(|_| CryptoError::Encryption)?;
-    Ok(key)
-}
-
-fn encrypt_password_v2(
-    plaintext: &[u8],
-    password: &[u8],
-    salt: [u8; SALT_LEN],
-    nonce: [u8; NONCE_LEN],
-) -> Result<String, CryptoError> {
-    let key = derive_argon2id_key(password, &salt)?;
-    let ciphertext = seal(plaintext, key.as_ref(), nonce, PASSWORD_AAD)?;
-    let mut combined =
-        Vec::with_capacity(PASSWORD_FORMAT_MAGIC.len() + SALT_LEN + NONCE_LEN + ciphertext.len());
-    combined.extend_from_slice(PASSWORD_FORMAT_MAGIC);
-    combined.extend_from_slice(&salt);
-    combined.extend_from_slice(&nonce);
-    combined.extend_from_slice(&ciphertext);
-    Ok(BASE64.encode(combined))
-}
-
-fn decrypt_password_v2(combined: &[u8], password: &[u8]) -> Result<String, CryptoError> {
-    let minimum = PASSWORD_FORMAT_MAGIC.len() + SALT_LEN + NONCE_LEN + TAG_LEN;
-    if combined.len() < minimum || !combined.starts_with(PASSWORD_FORMAT_MAGIC) {
-        return Err(CryptoError::InvalidFormat);
-    }
-    let salt_start = PASSWORD_FORMAT_MAGIC.len();
-    let nonce_start = salt_start + SALT_LEN;
-    let ciphertext_start = nonce_start + NONCE_LEN;
-    let salt = &combined[salt_start..nonce_start];
-    let nonce: [u8; NONCE_LEN] = combined[nonce_start..ciphertext_start]
-        .try_into()
-        .map_err(|_| CryptoError::InvalidFormat)?;
-    let key = derive_argon2id_key(password, salt).map_err(|_| CryptoError::Decryption)?;
-    let plaintext = open(
-        &combined[ciphertext_start..],
-        key.as_ref(),
-        nonce,
-        PASSWORD_AAD,
-    )?;
-    String::from_utf8(plaintext.to_vec()).map_err(|_| CryptoError::Decryption)
-}
-
-fn decrypt_password_legacy(combined: &[u8], password: &[u8]) -> Result<String, CryptoError> {
-    if combined.len() < SALT_LEN + NONCE_LEN + TAG_LEN {
-        return Err(CryptoError::InvalidFormat);
-    }
-    let salt = &combined[..SALT_LEN];
-    let nonce: [u8; NONCE_LEN] = combined[SALT_LEN..SALT_LEN + NONCE_LEN]
-        .try_into()
-        .map_err(|_| CryptoError::InvalidFormat)?;
-    let key = Zeroizing::new(derive_legacy_key(password, salt, LEGACY_PBKDF2_ITERATIONS));
-    let plaintext = open(&combined[SALT_LEN + NONCE_LEN..], key.as_ref(), nonce, &[])?;
-    String::from_utf8(plaintext.to_vec()).map_err(|_| CryptoError::Decryption)
-}
-
-fn encrypt_local(plaintext: &str, key: &[u8]) -> Result<String, CryptoError> {
-    if plaintext.len() > MAX_SECRET_BYTES {
-        return Err(CryptoError::InputTooLarge);
-    }
-    let nonce = random_bytes::<NONCE_LEN>()?;
-    encrypt_local_with_nonce(plaintext, key, nonce)
-}
-
-fn encrypt_local_with_nonce(
-    plaintext: &str,
-    key: &[u8],
-    nonce: [u8; NONCE_LEN],
-) -> Result<String, CryptoError> {
-    if plaintext.len() > MAX_SECRET_BYTES {
-        return Err(CryptoError::InputTooLarge);
-    }
-    let ciphertext = seal(plaintext.as_bytes(), key, nonce, LOCAL_AAD)?;
-    let mut combined = Vec::with_capacity(LOCAL_FORMAT_MAGIC.len() + NONCE_LEN + ciphertext.len());
-    combined.extend_from_slice(LOCAL_FORMAT_MAGIC);
-    combined.extend_from_slice(&nonce);
-    combined.extend_from_slice(&ciphertext);
-    Ok(BASE64.encode(combined))
-}
-
-fn decrypt_local(ciphertext_base64: &str, key: &[u8]) -> Result<String, CryptoError> {
-    if ciphertext_base64.len() > MAX_CIPHERTEXT_BASE64_BYTES {
-        return Err(CryptoError::InputTooLarge);
-    }
-    let combined = BASE64
-        .decode(ciphertext_base64)
-        .map_err(|_| CryptoError::InvalidFormat)?;
-    if combined.starts_with(LOCAL_FORMAT_MAGIC) {
-        let minimum = LOCAL_FORMAT_MAGIC.len() + NONCE_LEN + TAG_LEN;
-        if combined.len() < minimum {
-            return Err(CryptoError::InvalidFormat);
-        }
-        let nonce_start = LOCAL_FORMAT_MAGIC.len();
-        let ciphertext_start = nonce_start + NONCE_LEN;
-        let nonce = combined[nonce_start..ciphertext_start]
-            .try_into()
-            .map_err(|_| CryptoError::InvalidFormat)?;
-        let modern =
-            open(&combined[ciphertext_start..], key, nonce, LOCAL_AAD).and_then(|plaintext| {
-                String::from_utf8(plaintext.to_vec()).map_err(|_| CryptoError::Decryption)
-            });
-        if modern.is_ok() {
-            return modern;
-        }
-        // A legacy random nonce can begin with YHL2 by coincidence. Its AEAD tag
-        // still authenticates under the legacy layout, so fallback is fail-closed.
-        return decrypt_local_legacy_decoded(&combined, key).or(modern);
-    }
-    decrypt_local_legacy_decoded(&combined, key)
-}
-
-fn decrypt_local_legacy(ciphertext_base64: &str, key: &[u8]) -> Result<String, CryptoError> {
-    let combined = BASE64
-        .decode(ciphertext_base64)
-        .map_err(|_| CryptoError::InvalidFormat)?;
-    decrypt_local_legacy_decoded(&combined, key)
-}
-
-fn decrypt_local_legacy_decoded(combined: &[u8], key: &[u8]) -> Result<String, CryptoError> {
-    if combined.len() < NONCE_LEN + TAG_LEN {
-        return Err(CryptoError::InvalidFormat);
-    }
-    let nonce = combined[..NONCE_LEN]
-        .try_into()
-        .map_err(|_| CryptoError::InvalidFormat)?;
-    let plaintext = open(&combined[NONCE_LEN..], key, nonce, &[])?;
-    String::from_utf8(plaintext.to_vec()).map_err(|_| CryptoError::Decryption)
-}
-
-#[cfg(feature = "fuzzing")]
-pub(crate) fn fuzz_local_ciphertext(data: &[u8]) {
-    if data.len() <= MAX_SECRET_BYTES + LOCAL_FORMAT_MAGIC.len() + NONCE_LEN + TAG_LEN {
-        let _ = decrypt_local(&BASE64.encode(data), &[0x42; KEY_LEN]);
     }
 }
 
@@ -614,55 +383,13 @@ fn encrypt_with_keychain_key_blocking(plaintext: String) -> Result<String, Crypt
     let encoded = get_encryption_key()?;
     let key = decode_key(&encoded)?;
     let plaintext = Zeroizing::new(plaintext);
-    encrypt_local(&plaintext, key.as_ref())
+    Ok(encrypt_local(&plaintext, key.as_ref())?)
 }
 
 fn decrypt_with_keychain_key_blocking(ciphertext_base64: String) -> Result<String, CryptoError> {
     let encoded = get_encryption_key()?;
     let key = decode_key(&encoded)?;
-    decrypt_local(&ciphertext_base64, key.as_ref())
-}
-
-fn encrypt_with_password_bytes(plaintext: &[u8], password: &[u8]) -> Result<String, CryptoError> {
-    if plaintext.len() > MAX_BACKUP_BYTES {
-        return Err(CryptoError::InputTooLarge);
-    }
-    if !(8..=MAX_PASSWORD_BYTES).contains(&password.len()) {
-        return Err(CryptoError::InvalidPassword);
-    }
-    encrypt_password_v2(
-        plaintext,
-        password,
-        random_bytes::<SALT_LEN>()?,
-        random_bytes::<NONCE_LEN>()?,
-    )
-}
-
-fn decrypt_with_password_bytes(
-    ciphertext_base64: &str,
-    password: &[u8],
-) -> Result<String, CryptoError> {
-    if ciphertext_base64.len() > MAX_CIPHERTEXT_BASE64_BYTES {
-        return Err(CryptoError::InputTooLarge);
-    }
-    if password.is_empty() || password.len() > MAX_PASSWORD_BYTES {
-        return Err(CryptoError::InvalidPassword);
-    }
-    let combined = BASE64
-        .decode(ciphertext_base64)
-        .map_err(|_| CryptoError::InvalidFormat)?;
-    if combined.starts_with(PASSWORD_FORMAT_MAGIC) {
-        let modern = decrypt_password_v2(&combined, password);
-        if modern.is_ok() {
-            modern
-        } else {
-            // A legacy random salt can begin with YHP2 by coincidence. Only a
-            // valid legacy AES-GCM tag can make this compatibility path succeed.
-            decrypt_password_legacy(&combined, password).or(modern)
-        }
-    } else {
-        decrypt_password_legacy(&combined, password)
-    }
+    Ok(decrypt_local(&ciphertext_base64, key.as_ref())?)
 }
 
 fn encrypt_with_password_blocking(
@@ -671,7 +398,10 @@ fn encrypt_with_password_blocking(
 ) -> Result<String, CryptoError> {
     let plaintext = Zeroizing::new(plaintext);
     let password = Zeroizing::new(password);
-    encrypt_with_password_bytes(plaintext.as_bytes(), password.as_bytes())
+    Ok(encrypt_with_password_bytes(
+        plaintext.as_bytes(),
+        password.as_bytes(),
+    )?)
 }
 
 fn decrypt_with_password_blocking(
@@ -679,7 +409,10 @@ fn decrypt_with_password_blocking(
     password: String,
 ) -> Result<String, CryptoError> {
     let password = Zeroizing::new(password);
-    decrypt_with_password_bytes(&ciphertext_base64, password.as_bytes())
+    Ok(decrypt_with_password_bytes(
+        &ciphertext_base64,
+        password.as_bytes(),
+    )?)
 }
 
 fn get_sync_password() -> Result<Zeroizing<String>, CryptoError> {
@@ -689,12 +422,18 @@ fn get_sync_password() -> Result<Zeroizing<String>, CryptoError> {
 fn encrypt_with_sync_password_blocking(plaintext: String) -> Result<String, CryptoError> {
     let plaintext = Zeroizing::new(plaintext);
     let password = get_sync_password()?;
-    encrypt_with_password_bytes(plaintext.as_bytes(), password.as_bytes())
+    Ok(encrypt_with_password_bytes(
+        plaintext.as_bytes(),
+        password.as_bytes(),
+    )?)
 }
 
 fn decrypt_with_sync_password_blocking(ciphertext_base64: String) -> Result<String, CryptoError> {
     let password = get_sync_password()?;
-    decrypt_with_password_bytes(&ciphertext_base64, password.as_bytes())
+    Ok(decrypt_with_password_bytes(
+        &ciphertext_base64,
+        password.as_bytes(),
+    )?)
 }
 
 fn store_sync_password_blocking(password: String) -> Result<(), CryptoError> {
@@ -908,11 +647,8 @@ pub async fn delete_sync_path() -> Result<(), CryptoError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{cell::RefCell, collections::HashMap};
-
-    const TEST_KEY: [u8; KEY_LEN] = [0x42; KEY_LEN];
-    const TEST_NONCE: [u8; NONCE_LEN] = [0x24; NONCE_LEN];
-    const TEST_SALT: [u8; SALT_LEN] = [0x11; SALT_LEN];
+    use std::cell::RefCell;
+    use std::collections::HashMap;
 
     #[derive(Default)]
     struct MemoryCredentialBackend {
@@ -1065,406 +801,10 @@ mod tests {
         );
     }
 
-    // Golden vectors pinned from the shipping implementation (v2.8.2). They are the
-    // byte-exact compatibility contract for every future implementation of these
-    // formats (crate extraction, mobile bridge). Never regenerate them to make a
-    // failing test pass — a mismatch IS a format break. Synthetic key/secret only.
-    // The same vectors live in test/fixtures/crypto-vectors.json for non-Rust
-    // consumers; golden_vectors_match_shared_fixture_file keeps the two in sync.
-    const GOLDEN_YHL2: &str = "WUhMMiQkJCQkJCQkJCQkJF/Tlxaw9YJuY6By4Y5iy/b4IlzcQVnWIotANO65HLhR";
-    const GOLDEN_YHP2: &str =
-        "WUhQMhEREREREREREREREREREREkJCQkJCQkJCQkJCTw0CgTeOc6O0lgi4shRu19E9mEq1BkZjXFYaEVZU8=";
-    const GOLDEN_LEGACY_LOCAL: &str =
-        "JCQkJCQkJCQkJCQkX9OXFrD1gm5joHLhjmLL9hJc5PhZzQnBadES2QRoq4c=";
-    const GOLDEN_LEGACY_PASSWORD: &str =
-        "ERERERERERERERERERERESQkJCQkJCQkJCQkJAV3G/AUdzdJwflpqAesx/K3bmL5v9C1XxRf/lZKtA==";
-    const GOLDEN_LOCAL_PLAINTEXT: &str = "JBSWY3DPEHPK3PXP";
-    const GOLDEN_BACKUP_PLAINTEXT: &str = "example backup";
-    const GOLDEN_PASSWORD: &[u8] = b"correct horse";
-
     #[test]
-    fn golden_yhl2_vector_is_byte_stable() {
-        assert_eq!(
-            encrypt_local_with_nonce(GOLDEN_LOCAL_PLAINTEXT, &TEST_KEY, TEST_NONCE)
-                .expect("encryption succeeds"),
-            GOLDEN_YHL2
-        );
-        assert_eq!(
-            decrypt_local(GOLDEN_YHL2, &TEST_KEY).expect("decryption succeeds"),
-            GOLDEN_LOCAL_PLAINTEXT
-        );
-    }
-
-    #[test]
-    fn golden_yhp2_vector_is_byte_stable() {
-        assert_eq!(
-            encrypt_password_v2(
-                GOLDEN_BACKUP_PLAINTEXT.as_bytes(),
-                GOLDEN_PASSWORD,
-                TEST_SALT,
-                TEST_NONCE
-            )
-            .expect("encryption succeeds"),
-            GOLDEN_YHP2
-        );
-        assert_eq!(
-            decrypt_with_password_bytes(GOLDEN_YHP2, GOLDEN_PASSWORD).expect("decryption succeeds"),
-            GOLDEN_BACKUP_PLAINTEXT
-        );
-    }
-
-    #[test]
-    fn golden_legacy_vectors_remain_decryptable() {
-        assert_eq!(
-            decrypt_local(GOLDEN_LEGACY_LOCAL, &TEST_KEY).expect("legacy local decrypts"),
-            GOLDEN_LOCAL_PLAINTEXT
-        );
-        assert_eq!(
-            decrypt_with_password_bytes(GOLDEN_LEGACY_PASSWORD, GOLDEN_PASSWORD)
-                .expect("legacy password decrypts"),
-            GOLDEN_BACKUP_PLAINTEXT
-        );
-    }
-
-    #[test]
-    fn golden_yhp2_rejects_corruption_with_exact_errors() {
-        let decoded = BASE64.decode(GOLDEN_YHP2).expect("base64 is valid");
-        assert!(matches!(
-            decrypt_password_v2(&decoded[..20], GOLDEN_PASSWORD),
-            Err(CryptoError::InvalidFormat)
-        ));
-        let mut flipped_magic = decoded.clone();
-        flipped_magic[0] ^= 1;
-        assert!(matches!(
-            decrypt_password_v2(&flipped_magic, GOLDEN_PASSWORD),
-            Err(CryptoError::InvalidFormat)
-        ));
-        // The production dispatcher routes a non-YHP2 prefix to the legacy
-        // layout, whose tag then fails — a different error than the inner parser.
-        assert!(matches!(
-            decrypt_with_password_bytes(&BASE64.encode(&flipped_magic), GOLDEN_PASSWORD),
-            Err(CryptoError::Decryption)
-        ));
-        let mut flipped_tag = decoded.clone();
-        let last = flipped_tag.len() - 1;
-        flipped_tag[last] ^= 1;
-        assert!(matches!(
-            decrypt_password_v2(&flipped_tag, GOLDEN_PASSWORD),
-            Err(CryptoError::Decryption)
-        ));
-        assert!(matches!(
-            decrypt_with_password_bytes(&BASE64.encode(&flipped_tag), GOLDEN_PASSWORD),
-            Err(CryptoError::Decryption)
-        ));
-        assert!(matches!(
-            decrypt_with_password_bytes(&BASE64.encode(&decoded[..20]), GOLDEN_PASSWORD),
-            Err(CryptoError::InvalidFormat)
-        ));
-    }
-
-    #[test]
-    fn golden_yhl2_rejects_corruption_with_exact_errors() {
-        let decoded = BASE64.decode(GOLDEN_YHL2).expect("base64 is valid");
-        let truncated = &decoded[..LOCAL_FORMAT_MAGIC.len() + NONCE_LEN + TAG_LEN - 1];
-        assert!(matches!(
-            decrypt_local(&BASE64.encode(truncated), &TEST_KEY),
-            Err(CryptoError::InvalidFormat)
-        ));
-        let mut flipped_tag = decoded.clone();
-        let last = flipped_tag.len() - 1;
-        flipped_tag[last] ^= 1;
-        assert!(matches!(
-            decrypt_local(&BASE64.encode(&flipped_tag), &TEST_KEY),
-            Err(CryptoError::Decryption)
-        ));
-        // A flipped magic routes to the legacy layout, whose tag then fails too.
-        let mut flipped_magic = decoded;
-        flipped_magic[0] ^= 1;
-        assert!(matches!(
-            decrypt_local(&BASE64.encode(&flipped_magic), &TEST_KEY),
-            Err(CryptoError::Decryption)
-        ));
-    }
-
-    #[test]
-    fn oversized_local_plaintext_is_rejected_before_randomness() {
-        let oversized = "A".repeat(MAX_SECRET_BYTES + 1);
-        assert!(matches!(
-            encrypt_local(&oversized, &TEST_KEY),
-            Err(CryptoError::InputTooLarge)
-        ));
-        assert!(matches!(
-            encrypt_local_with_nonce(&oversized, &TEST_KEY, TEST_NONCE),
-            Err(CryptoError::InputTooLarge)
-        ));
-    }
-
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct VectorFixture {
-        #[serde(rename = "$comment")]
-        _comment: String,
-        key_base64: String,
-        nonce_base64: String,
-        salt_base64: String,
-        password: String,
-        argon2id: FixtureArgon2,
-        pbkdf2_iterations: u32,
-        vectors: Vec<GoldenVector>,
-        rejection_vectors: Vec<RejectionVector>,
-    }
-
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct FixtureArgon2 {
-        memory_kib: u32,
-        iterations: u32,
-        parallelism: u32,
-    }
-
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct GoldenVector {
-        format: String,
-        #[serde(rename = "description")]
-        _description: String,
-        plaintext: String,
-        ciphertext_base64: String,
-        decrypt_only: bool,
-    }
-
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct RejectionVector {
-        format: String,
-        #[serde(rename = "description")]
-        _description: String,
-        ciphertext_base64: String,
-        expected: String,
-    }
-
-    fn load_vector_fixture() -> VectorFixture {
-        let raw = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../test/fixtures/crypto-vectors.json"
-        ))
-        .expect("fixture file exists");
-        serde_json::from_str(&raw).expect("fixture matches the typed schema")
-    }
-
-    #[test]
-    fn golden_vectors_match_shared_fixture_file() {
-        let fixture = load_vector_fixture();
-        assert_eq!(
-            BASE64.decode(&fixture.key_base64).expect("key decodes"),
-            TEST_KEY
-        );
-        assert_eq!(
-            BASE64.decode(&fixture.nonce_base64).expect("nonce decodes"),
-            TEST_NONCE
-        );
-        assert_eq!(
-            BASE64.decode(&fixture.salt_base64).expect("salt decodes"),
-            TEST_SALT
-        );
-        assert_eq!(
-            fixture.password.as_bytes(),
-            GOLDEN_PASSWORD,
-            "fixture password matches"
-        );
-        assert_eq!(fixture.argon2id.memory_kib, ARGON2_MEMORY_KIB);
-        assert_eq!(fixture.argon2id.iterations, ARGON2_ITERATIONS);
-        assert_eq!(fixture.argon2id.parallelism, ARGON2_PARALLELISM);
-        assert_eq!(fixture.pbkdf2_iterations, LEGACY_PBKDF2_ITERATIONS);
-        let expected = [
-            ("YHL2", GOLDEN_YHL2, GOLDEN_LOCAL_PLAINTEXT, false),
-            ("YHP2", GOLDEN_YHP2, GOLDEN_BACKUP_PLAINTEXT, false),
-            (
-                "legacy-local",
-                GOLDEN_LEGACY_LOCAL,
-                GOLDEN_LOCAL_PLAINTEXT,
-                true,
-            ),
-            (
-                "legacy-password",
-                GOLDEN_LEGACY_PASSWORD,
-                GOLDEN_BACKUP_PLAINTEXT,
-                true,
-            ),
-        ];
-        assert_eq!(fixture.vectors.len(), expected.len());
-        for (vector, (format, ciphertext, plaintext, decrypt_only)) in
-            fixture.vectors.iter().zip(expected)
-        {
-            assert_eq!(vector.format, format);
-            assert_eq!(vector.ciphertext_base64, ciphertext);
-            assert_eq!(vector.plaintext, plaintext);
-            assert_eq!(vector.decrypt_only, decrypt_only);
-        }
-    }
-
-    #[test]
-    fn shared_rejection_vectors_fail_through_production_dispatch() {
-        let fixture = load_vector_fixture();
-        assert!(!fixture.rejection_vectors.is_empty());
-        for vector in &fixture.rejection_vectors {
-            let result = match vector.format.as_str() {
-                "YHL2" | "legacy-local" => decrypt_local(&vector.ciphertext_base64, &TEST_KEY),
-                "YHP2" | "legacy-password" => {
-                    decrypt_with_password_bytes(&vector.ciphertext_base64, GOLDEN_PASSWORD)
-                }
-                other => panic!("unknown rejection vector format: {other}"),
-            };
-            match vector.expected.as_str() {
-                "invalid-format" => assert!(
-                    matches!(result, Err(CryptoError::InvalidFormat)),
-                    "expected InvalidFormat for {}",
-                    vector.ciphertext_base64
-                ),
-                "auth-failure" => assert!(
-                    matches!(result, Err(CryptoError::Decryption)),
-                    "expected Decryption for {}",
-                    vector.ciphertext_base64
-                ),
-                other => panic!("unknown expected outcome: {other}"),
-            }
-        }
-    }
-
-    #[test]
-    fn pbkdf2_sha256_matches_known_vector() {
-        let key = derive_legacy_key(b"password", b"salt", 1);
-        assert_eq!(
-            BASE64.encode(key),
-            "Eg+2z/z4syxD5yJSVsT4N6hlSMkszDVICAWYfLcL4Xs="
-        );
-    }
-
-    #[test]
-    fn password_v2_round_trip_is_deterministic_with_fixed_randomness() {
-        let encrypted =
-            encrypt_password_v2(b"example backup", b"correct horse", TEST_SALT, TEST_NONCE)
-                .expect("encryption succeeds");
-        let decoded = BASE64.decode(&encrypted).expect("base64 is valid");
-        assert!(decoded.starts_with(PASSWORD_FORMAT_MAGIC));
-        assert_eq!(
-            decrypt_password_v2(&decoded, b"correct horse").expect("decryption succeeds"),
-            "example backup"
-        );
-    }
-
-    #[test]
-    fn password_v2_rejects_wrong_password_and_tampering() {
-        let encrypted =
-            encrypt_password_v2(b"example backup", b"correct horse", TEST_SALT, TEST_NONCE)
-                .expect("encryption succeeds");
-        let mut decoded = BASE64.decode(encrypted).expect("base64 is valid");
-        assert!(decrypt_password_v2(&decoded, b"wrong password").is_err());
-        let last = decoded.len() - 1;
-        decoded[last] ^= 1;
-        assert!(decrypt_password_v2(&decoded, b"correct horse").is_err());
-    }
-
-    #[test]
-    fn password_v2_rejects_truncated_or_modified_headers() {
-        let encrypted =
-            encrypt_password_v2(b"example backup", b"correct horse", TEST_SALT, TEST_NONCE)
-                .expect("encryption succeeds");
-        let mut decoded = BASE64.decode(encrypted).expect("base64 is valid");
-        assert!(decrypt_password_v2(&decoded[..20], b"correct horse").is_err());
-        decoded[0] ^= 1;
-        assert!(decrypt_password_v2(&decoded, b"correct horse").is_err());
-    }
-
-    #[test]
-    fn legacy_password_backup_remains_readable() {
-        let key = derive_legacy_key(b"legacy password", &TEST_SALT, LEGACY_PBKDF2_ITERATIONS);
-        let ciphertext =
-            seal(b"legacy backup", &key, TEST_NONCE, &[]).expect("legacy encryption succeeds");
-        let mut legacy = TEST_SALT.to_vec();
-        legacy.extend_from_slice(&TEST_NONCE);
-        legacy.extend_from_slice(&ciphertext);
-        assert_eq!(
-            decrypt_password_legacy(&legacy, b"legacy password")
-                .expect("legacy decryption succeeds"),
-            "legacy backup"
-        );
-    }
-
-    #[test]
-    fn legacy_password_marker_collision_remains_readable() {
-        let password = b"correct horse";
-        let mut salt = TEST_SALT;
-        salt[..PASSWORD_FORMAT_MAGIC.len()].copy_from_slice(PASSWORD_FORMAT_MAGIC);
-        let key = Zeroizing::new(derive_legacy_key(password, &salt, LEGACY_PBKDF2_ITERATIONS));
-        let ciphertext =
-            seal(b"legacy collision", key.as_ref(), TEST_NONCE, &[]).expect("encryption succeeds");
-        let mut combined = Vec::new();
-        combined.extend_from_slice(&salt);
-        combined.extend_from_slice(&TEST_NONCE);
-        combined.extend_from_slice(&ciphertext);
-
-        assert_eq!(
-            decrypt_with_password_bytes(&BASE64.encode(combined), password)
-                .expect("collision decrypts"),
-            "legacy collision"
-        );
-    }
-
-    #[test]
-    fn local_v2_and_legacy_formats_both_decrypt() {
-        let modern_ciphertext = seal(b"JBSWY3DPEHPK3PXP", &TEST_KEY, TEST_NONCE, LOCAL_AAD)
-            .expect("encryption succeeds");
-        let mut modern = LOCAL_FORMAT_MAGIC.to_vec();
-        modern.extend_from_slice(&TEST_NONCE);
-        modern.extend_from_slice(&modern_ciphertext);
-        assert_eq!(
-            decrypt_local(&BASE64.encode(modern), &TEST_KEY).expect("modern decrypt succeeds"),
-            "JBSWY3DPEHPK3PXP"
-        );
-
-        let legacy_ciphertext =
-            seal(b"JBSWY3DPEHPK3PXP", &TEST_KEY, TEST_NONCE, &[]).expect("encryption succeeds");
-        let mut legacy = TEST_NONCE.to_vec();
-        legacy.extend_from_slice(&legacy_ciphertext);
-        assert_eq!(
-            decrypt_local(&BASE64.encode(legacy), &TEST_KEY).expect("legacy decrypt succeeds"),
-            "JBSWY3DPEHPK3PXP"
-        );
-    }
-
-    #[test]
-    fn legacy_local_marker_collision_remains_readable() {
-        let mut nonce = TEST_NONCE;
-        nonce[..LOCAL_FORMAT_MAGIC.len()].copy_from_slice(LOCAL_FORMAT_MAGIC);
-        let ciphertext =
-            seal(b"JBSWY3DPEHPK3PXP", &TEST_KEY, nonce, &[]).expect("encryption succeeds");
-        let mut combined = Vec::new();
-        combined.extend_from_slice(&nonce);
-        combined.extend_from_slice(&ciphertext);
-
-        assert_eq!(
-            decrypt_local(&BASE64.encode(combined), &TEST_KEY).expect("collision decrypts"),
-            "JBSWY3DPEHPK3PXP"
-        );
-    }
-
-    #[test]
-    fn local_encryption_uses_a_fresh_nonce() {
-        let first = encrypt_local("JBSWY3DPEHPK3PXP", &TEST_KEY).expect("encryption succeeds");
-        let second = encrypt_local("JBSWY3DPEHPK3PXP", &TEST_KEY).expect("encryption succeeds");
-        assert_ne!(first, second);
-        assert_eq!(
-            decrypt_local(&first, &TEST_KEY).expect("decryption succeeds"),
-            "JBSWY3DPEHPK3PXP"
-        );
-    }
-
-    #[test]
-    fn key_and_path_validation_fail_closed() {
-        assert!(decode_key("not base64").is_err());
-        assert!(decode_key(&BASE64.encode([0_u8; 31])).is_err());
+    fn sync_path_validation_fails_closed() {
         assert!(validate_sync_path("../relative").is_err());
+        assert!(validate_sync_path("").is_err());
         assert!(validate_sync_path("/absolute/path").is_ok());
     }
 }

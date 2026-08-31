@@ -77,11 +77,11 @@ bun run check
 bun audit
 
 # Rust quality/security gate
-cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --locked
-cargo audit --file src-tauri/Cargo.lock
-cargo deny --manifest-path src-tauri/Cargo.toml check
+cargo fmt --all -- --check
+cargo clippy --workspace --locked --all-targets -- -D warnings
+cargo test --workspace --locked
+cargo audit --file Cargo.lock
+cargo deny check
 ```
 
 The app production command is `bun run tauri build`; landing development is `bun run --cwd landing dev`. Use only synthetic credentials in development and tests.

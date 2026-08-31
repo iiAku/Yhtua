@@ -5,7 +5,7 @@ Dependabot checks Bun/npm, Cargo, and GitHub Actions weekly and groups low-risk 
 For every update:
 
 - read upstream release/migration and security notes, especially for Nuxt, Astro, Tauri, keyring, cryptography, and file APIs;
-- regenerate `bun.lock` and `src-tauri/Cargo.lock` using the declared toolchains;
+- regenerate `bun.lock`, `Cargo.lock`, and `src-tauri/fuzz/Cargo.lock` using the declared toolchains;
 - run `bun audit`, `cargo audit`, and `cargo deny` and investigate the inclusion path of every finding;
 - test Linux, macOS, and Windows when platform integration changes;
 - avoid blanket advisory suppression. Every cargo-deny ignore requires a narrow reason and remains visible in output;

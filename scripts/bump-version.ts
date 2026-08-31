@@ -22,10 +22,18 @@ const replaceVersion = (path: string, pattern: RegExp, replacement: string) => {
   writeFileSync(path, updated)
 }
 
-replaceVersion('src-tauri/Cargo.toml', /^version = "[^"]+"/m, `version = "${nextVersion}"`)
+replaceVersion('Cargo.toml', /^version = "[^"]+"/m, `version = "${nextVersion}"`)
+for (const crate of ['yhtua', 'yhtua-crypto']) {
+  replaceVersion(
+    'Cargo.lock',
+    new RegExp(`(\\[\\[package\\]\\]\\nname = "${crate}"\\nversion = ")[^"]+"`),
+    `$1${nextVersion}"`,
+  )
+}
+// The standalone fuzz crate pins yhtua-crypto in its own lockfile.
 replaceVersion(
-  'src-tauri/Cargo.lock',
-  /(\[\[package\]\]\nname = "yhtua"\nversion = ")[^"]+"/,
+  'src-tauri/fuzz/Cargo.lock',
+  /(\[\[package\]\]\nname = "yhtua-crypto"\nversion = ")[^"]+"/,
   `$1${nextVersion}"`,
 )
 

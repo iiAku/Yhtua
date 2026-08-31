@@ -14,7 +14,9 @@ updates:
     open-pull-requests-limit: 10
 
   - package-ecosystem: cargo
-    directory: /src-tauri
+    directories:
+      - /
+      - /src-tauri/fuzz
     schedule:
       interval: weekly
       day: monday

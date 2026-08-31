@@ -3,19 +3,22 @@ import { readFileSync } from 'node:fs'
 const readJsonVersion = (path: string): string =>
   (JSON.parse(readFileSync(path, 'utf8')) as { version?: unknown }).version as string
 
-const cargoToml = readFileSync('src-tauri/Cargo.toml', 'utf8')
-const cargoLock = readFileSync('src-tauri/Cargo.lock', 'utf8')
+const cargoToml = readFileSync('Cargo.toml', 'utf8')
+const cargoLock = readFileSync('Cargo.lock', 'utf8')
+const fuzzCargoLock = readFileSync('src-tauri/fuzz/Cargo.lock', 'utf8')
 const landingPage = readFileSync('landing/src/pages/index.astro', 'utf8')
+
+const lockedVersion = (lock: string, name: string): string | undefined =>
+  lock.match(new RegExp(`\\[\\[package\\]\\]\\nname = "${name}"\\nversion = "([^"]+)"`))?.[1]
 
 const versions = new Map<string, string | undefined>([
   ['package.json', readJsonVersion('package.json')],
   ['landing/package.json', readJsonVersion('landing/package.json')],
   ['src-tauri/tauri.conf.json', readJsonVersion('src-tauri/tauri.conf.json')],
-  ['src-tauri/Cargo.toml', cargoToml.match(/^version = "([^"]+)"/m)?.[1]],
-  [
-    'src-tauri/Cargo.lock',
-    cargoLock.match(/\[\[package\]\]\nname = "yhtua"\nversion = "([^"]+)"/)?.[1],
-  ],
+  ['Cargo.toml (workspace)', cargoToml.match(/^version = "([^"]+)"/m)?.[1]],
+  ['Cargo.lock (yhtua)', lockedVersion(cargoLock, 'yhtua')],
+  ['Cargo.lock (yhtua-crypto)', lockedVersion(cargoLock, 'yhtua-crypto')],
+  ['src-tauri/fuzz/Cargo.lock (yhtua-crypto)', lockedVersion(fuzzCargoLock, 'yhtua-crypto')],
 ])
 
 const expected = versions.get('package.json')

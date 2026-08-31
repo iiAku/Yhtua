@@ -1,3 +1,6 @@
+# Cargo workspace build outputs
+/target/
+
 # Nuxt dev/build outputs
 .output
 .data

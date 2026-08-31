@@ -16,11 +16,11 @@ Run before opening a pull request:
 ```sh
 bun run check
 bun audit
-cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --locked
-cargo audit --file src-tauri/Cargo.lock
-cargo deny --manifest-path src-tauri/Cargo.toml check
+cargo fmt --all -- --check
+cargo clippy --workspace --locked --all-targets -- -D warnings
+cargo test --workspace --locked
+cargo audit --file Cargo.lock
+cargo deny check
 ```
 
 Security-sensitive changes require tests for failure behavior and backward compatibility. Do not weaken schemas, permissions, CSP, cryptographic parameters, or assertions to make a check pass. Update the changelog and relevant format/threat-model documentation when behavior or trust boundaries change.

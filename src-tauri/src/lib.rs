@@ -2,12 +2,6 @@ mod crypto;
 mod files;
 mod smoke;
 
-#[cfg(feature = "fuzzing")]
-#[doc(hidden)]
-pub fn fuzz_local_ciphertext(data: &[u8]) {
-    crypto::fuzz_local_ciphertext(data);
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Prevent EGL/DMABuf failures on Linux (Wayland + various GPU drivers)
