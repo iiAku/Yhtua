@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseBoundedJson } from './useBoundedJson'
+import { parseBoundedJson } from '../src'
 
 describe('bounded JSON parser', () => {
   it('parses ordinary objects and ignores structural characters inside strings', () => {

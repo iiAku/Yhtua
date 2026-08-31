@@ -1,0 +1,19 @@
+{
+  "name": "@yhtua/domain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Framework-neutral domain logic shared by every Yhtua client (schemas, merge rules, transfer policy, ports). No DOM, no Vue, no React.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}

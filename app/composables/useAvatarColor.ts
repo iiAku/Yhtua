@@ -1,3 +1,5 @@
+import { hashLabel } from '@yhtua/domain'
+
 const palette = [
   { bg: 'bg-violet-500/10 border-violet-500/15', text: 'text-violet-400' },
   { bg: 'bg-sky-500/10 border-sky-500/15', text: 'text-sky-400' },
@@ -9,11 +11,7 @@ const palette = [
   { bg: 'bg-teal-500/10 border-teal-500/15', text: 'text-teal-400' },
 ] as const
 
-const hashLabel = (label: string) => {
-  let hash = 0
-  for (const char of label) hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0
-  return Math.abs(hash) % palette.length
-}
-
-export const avatarBgClass = (label: string) => palette[hashLabel(label)]?.bg ?? palette[0].bg
-export const avatarTextClass = (label: string) => palette[hashLabel(label)]?.text ?? palette[0].text
+export const avatarBgClass = (label: string) =>
+  palette[hashLabel(label, palette.length)]?.bg ?? palette[0].bg
+export const avatarTextClass = (label: string) =>
+  palette[hashLabel(label, palette.length)]?.text ?? palette[0].text

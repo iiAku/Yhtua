@@ -1,24 +1,23 @@
-// Proof that the clipboard still holds what we put there, without keeping the
-// code itself around. The auto-clear runs up to 30s after the copy — and now
-// outlives the page — so retaining the plaintext for that whole window was the
-// one bit of hygiene the timed clear gave up. A digest compares just as well.
-// Falls back to the value itself where SubtleCrypto is unavailable, which keeps
-// the guarantee that we only ever clear what we wrote.
-export const clipboardFingerprint = async (value: string): Promise<string> => {
-  const subtle = globalThis.crypto?.subtle
-  if (!subtle) return value
+import {
+  clearOwnedClipboard as clearOwnedClipboardWith,
+  clipboardFingerprint as clipboardFingerprintWith,
+  type DigestFn,
+} from '@yhtua/domain'
 
-  const digest = await subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+// The domain logic requires an injected digest so no platform can silently
+// fall back to retaining the raw code. The desktop WebView always provides
+// SubtleCrypto; failing loudly here is preferable to a plaintext fingerprint.
+const digest: DigestFn = async (data) => {
+  const subtle = globalThis.crypto?.subtle
+  if (!subtle) throw new Error('SubtleCrypto is unavailable; refusing a plaintext fingerprint')
+  return new Uint8Array(await subtle.digest('SHA-256', data as BufferSource))
 }
 
-export const clearOwnedClipboard = async (
+export const clipboardFingerprint = (value: string): Promise<string> =>
+  clipboardFingerprintWith(value, digest)
+
+export const clearOwnedClipboard = (
   ownedFingerprint: string,
   read: () => Promise<string>,
   write: (value: string) => Promise<void>,
-): Promise<boolean> => {
-  const currentValue = await read()
-  if ((await clipboardFingerprint(currentValue)) !== ownedFingerprint) return false
-  await write('')
-  return true
-}
+): Promise<boolean> => clearOwnedClipboardWith(ownedFingerprint, read, write, digest)

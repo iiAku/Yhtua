@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeTokens } from './useMerge'
-import { MAX_TOKENS, type Token } from './useStore'
+import { MAX_TOKENS, mergeTokens, type Token } from '../src'
 
 const makeToken = (id: string, label: string, updatedAt: number): Token => ({
   id,

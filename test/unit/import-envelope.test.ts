@@ -1,25 +1,8 @@
+import { encryptedEnvelopeSchema, syncBackupSchema } from '@yhtua/domain'
 import { describe, expect, it } from 'vitest'
-import { z } from 'zod'
 
-const MAX_ENCRYPTED_BACKUP_BYTES = 24 * 1024 * 1024
-
-// Mirrors the envelope schemas in app/composables/useSettings.ts and
-// app/composables/useSync.ts. Neither is .strict(): backups written before 2.7.1
-// carry a vestigial `hmac` key, and rejecting a file over a key we no longer read
-// made real backups — including the live sync file — permanently unreadable.
-const importEnvelopeSchema = z.object({
-  version: z.string().max(32).optional(),
-  encrypted: z.literal(true),
-  syncedAt: z.number().int().nonnegative().optional(),
-  data: z.string().min(1).max(MAX_ENCRYPTED_BACKUP_BYTES),
-})
-
-const syncBackupSchema = z.object({
-  version: z.enum(['2.2.0', '2.3.0']),
-  encrypted: z.literal(true),
-  syncedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  data: z.string().min(1).max(MAX_ENCRYPTED_BACKUP_BYTES),
-})
+// These import the REAL schemas from @yhtua/domain — previously this file
+// carried copies because the composables could not be imported outside Nuxt.
 
 const data = 'WUhQMgAAAA==ciphertext'
 // The shape of a real pre-2.7.1 sync backup.
@@ -36,7 +19,7 @@ describe('encrypted backup envelopes', () => {
     const parsed = syncBackupSchema.parse(legacySyncBackup)
     expect(parsed).not.toHaveProperty('hmac')
     expect(parsed.data).toBe(data)
-    expect(importEnvelopeSchema.parse(legacySyncBackup)).not.toHaveProperty('hmac')
+    expect(encryptedEnvelopeSchema.parse(legacySyncBackup)).not.toHaveProperty('hmac')
   })
 
   it('routes every encrypted-looking file to decryption', () => {
@@ -49,7 +32,7 @@ describe('encrypted backup envelopes', () => {
     ]
 
     for (const envelope of envelopes) {
-      expect(importEnvelopeSchema.safeParse(envelope).success).toBe(true)
+      expect(encryptedEnvelopeSchema.safeParse(envelope).success).toBe(true)
     }
   })
 
@@ -62,7 +45,7 @@ describe('encrypted backup envelopes', () => {
     ]
 
     for (const payload of notEncrypted) {
-      expect(importEnvelopeSchema.safeParse(payload).success).toBe(false)
+      expect(encryptedEnvelopeSchema.safeParse(payload).success).toBe(false)
     }
   })
 

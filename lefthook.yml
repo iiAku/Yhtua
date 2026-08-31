@@ -2,8 +2,8 @@ pre-commit:
   parallel: true
   commands:
     format:
-      glob: 'app/**/*.{ts,vue}'
+      glob: '{app,packages,apps}/**/*.{ts,tsx,vue}'
       run: bunx oxfmt --check {staged_files}
     lint:
-      glob: 'app/**/*.{ts,vue}'
+      glob: '{app,packages,apps}/**/*.{ts,tsx,vue}'
       run: bunx oxlint {staged_files}

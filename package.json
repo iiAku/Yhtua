@@ -8,7 +8,9 @@
   "author": "Yoann Gendrey <yoann@gendrey.fr>",
   "repository": "https://github.com/iiAku/Yhtua",
   "workspaces": [
-    "landing"
+    "landing",
+    "packages/*",
+    "apps/*"
   ],
   "type": "module",
   "scripts": {
@@ -22,7 +24,7 @@
     "format:check": "oxfmt --check",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "typecheck": "nuxi typecheck",
+    "typecheck": "nuxi typecheck && bun run --cwd packages/domain typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
     "check:version": "bun scripts/check-version.ts",
@@ -36,6 +38,7 @@
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
     "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@yhtua/domain": "workspace:*",
     "nuxt": "^4.5.1",
     "otpauth": "^9.5.1",
     "vue": "^3.5.40",
@@ -62,9 +65,11 @@
     "brace-expansion": "5.0.9",
     "defu": "^6.1.7",
     "esbuild": "^0.28.1",
+    "js-yaml": "^4.3.1",
     "launch-editor": "^2.14.1",
     "lodash": "^4.18.1",
     "minimatch": "^5.1.7",
+    "nanoid": "^3.3.18",
     "picomatch": "^2.3.2",
     "postcss": "^8.5.25",
     "rollup": "^4.62.3",

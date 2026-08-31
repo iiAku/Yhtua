@@ -1,6 +1,15 @@
 import { invoke } from '@tauri-apps/api/core'
-import { z } from 'zod'
-import { MAX_ENCRYPTED_BACKUP_BYTES } from './useStore'
+import {
+  describeError,
+  describeIssues,
+  encryptedEnvelopeSchema,
+  MAX_ENCRYPTED_BACKUP_BYTES,
+  parseAndValidate,
+  plaintextBackupSchema as domainPlaintextBackupSchema,
+  type BackupResult,
+  type EncryptedExport,
+} from '@yhtua/domain'
+import type { z } from 'zod'
 import {
   decryptSecret,
   decryptWithPassword,
@@ -9,71 +18,30 @@ import {
   initializeEncryption,
 } from './useCrypto'
 
-const timestampSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
-
-// The envelope is unauthenticated metadata — only `data` is bound to the password
-// by AEAD. So any file that merely looks encrypted earns a decryption attempt,
-// and the strict validation that guards the store runs on the decrypted payload.
-// Not .strict(): pre-2.7.1 backups carry a vestigial `hmac` key, and rejecting
-// them outright sent an encrypted file to the plaintext parser, which then
-// reported a nonsense error instead of asking for the password.
-// Sync binds envelope metadata to the payload separately (useSync.ts) because it
-// acts on `syncedAt`; a manual import reads nothing but `data`.
-const encryptedEnvelopeSchema = z.object({
-  version: z.string().max(32).optional(),
-  encrypted: z.literal(true),
-  syncedAt: timestampSchema.optional(),
-  data: z.string().min(1).max(MAX_ENCRYPTED_BACKUP_BYTES),
-})
-
-const parseAndValidate = <T extends z.ZodType>(
-  jsonString: string,
-  schema: T,
-  maxBytes?: number,
-) => {
-  try {
-    const parsed = parseBoundedJson(jsonString, maxBytes)
-    return schema.safeParse(parsed)
-  } catch {
-    return schema.safeParse(undefined)
-  }
-}
-
-// Zod issues carry the field path and rule, never the value — safe to show.
-const describeIssues = (error: z.ZodError | undefined): string => {
-  const issue = error?.issues[0]
-  if (!issue) return 'Invalid token file format'
-  const field = issue.path.join('.')
-  return field ? `Invalid backup: ${field} — ${issue.message}` : `Invalid backup: ${issue.message}`
-}
-
-// A rejected `invoke` yields the serialized Rust error as a plain string, not an
-// Error — so `instanceof Error` alone silently swallowed every reason the OS gave
-// us ("Encryption key is missing", "Secure credential storage is unavailable")
-// and replaced it with a generic fallback.
-const describeError = (error: unknown, fallback: string): string => {
-  if (error instanceof Error) return error.message
-  if (typeof error === 'string' && error.trim()) return error
-  return fallback
-}
+export type { BackupResult } from '@yhtua/domain'
 
 const pickBackupFile = (): Promise<string | null> => invoke<string | null>('pick_backup_file')
 
 const saveBackupFile = (content: string): Promise<boolean> =>
   invoke<boolean>('save_backup_file', { content })
 
-type EncryptedExport = z.infer<typeof encryptedEnvelopeSchema>
+// The single routing decision for any picked backup file. Exported so the
+// conformance suite exercises the exact same code path the import flows use.
+export type ImportClassification =
+  | { kind: 'encrypted'; envelope: EncryptedExport }
+  | { kind: 'plaintext'; backup: z.infer<typeof domainPlaintextBackupSchema> }
+  | { kind: 'rejected'; error?: z.ZodError }
 
-// Every import/export path returns one of these instead of notifying itself, so
-// the page decides where feedback belongs — inline in the modal for failures the
-// user can act on, a toast once the modal is gone.
-export type BackupResult = {
-  success: boolean
-  cancelled?: boolean
-  error?: string
-  tokensCount?: number
-  legacy?: boolean
-  needsPassword?: boolean
+export const classifyImportJson = (jsonContent: string): ImportClassification => {
+  const encryptedResult = parseAndValidate(
+    jsonContent,
+    encryptedEnvelopeSchema,
+    MAX_ENCRYPTED_BACKUP_BYTES,
+  )
+  if (encryptedResult.success) return { kind: 'encrypted', envelope: encryptedResult.data }
+  const plainResult = parseAndValidate(jsonContent, domainPlaintextBackupSchema)
+  if (plainResult.success) return { kind: 'plaintext', backup: plainResult.data }
+  return { kind: 'rejected', error: plainResult.error }
 }
 
 // Tokens arrive here already parsed into the current shape; this completes the
@@ -196,19 +164,15 @@ export const importTokensEncrypted = async (password: string): Promise<BackupRes
       return { success: false, cancelled: true }
     }
 
-    const encryptedResult = parseAndValidate(
-      jsonContent,
-      encryptedEnvelopeSchema,
-      MAX_ENCRYPTED_BACKUP_BYTES,
-    )
+    const classified = classifyImportJson(jsonContent)
 
-    if (encryptedResult.success) {
+    if (classified.kind === 'encrypted') {
       let decryptedData: unknown
       try {
         // BOUNDARY: decryption is the password check — only failures here mean
         // the password was wrong, so nothing else belongs inside this catch.
         decryptedData = parseBoundedJson(
-          await decryptWithPassword(encryptedResult.data.data, password),
+          await decryptWithPassword(classified.envelope.data, password),
         )
       } catch {
         return { success: false, error: 'Wrong password or corrupted file' }
@@ -224,15 +188,13 @@ export const importTokensEncrypted = async (password: string): Promise<BackupRes
     }
 
     // Not encrypted — an unencrypted export from any supported release.
-    const legacyResult = parseAndValidate(jsonContent, plaintextBackupSchema)
-
-    if (legacyResult.success) {
-      const importedCount = await addImportedTokens(legacyResult.data.tokens)
+    if (classified.kind === 'plaintext') {
+      const importedCount = await addImportedTokens(classified.backup.tokens)
       return { success: true, tokensCount: importedCount, legacy: true }
     }
 
-    console.error('Import validation error:', legacyResult.error?.issues)
-    return { success: false, error: describeIssues(legacyResult.error) }
+    console.error('Import validation error:', classified.error?.issues)
+    return { success: false, error: describeIssues(classified.error) }
   } catch (error) {
     console.error('Import error:', error)
     return {
@@ -251,24 +213,18 @@ export const importTokens = async (): Promise<BackupResult> => {
 
     // Encrypted backup (manual export or sync file) — the caller collects the
     // password and finishes through completePendingEncryptedImport.
-    const encryptedResult = parseAndValidate(
-      jsonContent,
-      encryptedEnvelopeSchema,
-      MAX_ENCRYPTED_BACKUP_BYTES,
-    )
-    if (encryptedResult.success) {
-      pendingEncryptedBackup = encryptedResult.data
+    const classified = classifyImportJson(jsonContent)
+    if (classified.kind === 'encrypted') {
+      pendingEncryptedBackup = classified.envelope
       return { success: false, needsPassword: true }
     }
 
-    const result = parseAndValidate(jsonContent, plaintextBackupSchema)
-
-    if (!result.success) {
-      console.error('Import validation error:', result.error.issues)
-      return { success: false, error: describeIssues(result.error) }
+    if (classified.kind === 'rejected') {
+      console.error('Import validation error:', classified.error?.issues)
+      return { success: false, error: describeIssues(classified.error) }
     }
 
-    const importedCount = await addImportedTokens(result.data.tokens)
+    const importedCount = await addImportedTokens(classified.backup.tokens)
     return { success: true, tokensCount: importedCount }
   } catch (error) {
     console.error('Import error:', error)

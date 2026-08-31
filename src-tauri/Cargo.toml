@@ -1,5 +1,6 @@
 [package]
 name = "yhtua"
+publish = false
 version.workspace = true
 description = "Open-source encrypted TOTP token manager for desktop"
 authors.workspace = true

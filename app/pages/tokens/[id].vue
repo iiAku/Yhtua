@@ -333,8 +333,11 @@ const copy = async () => {
   const sequence = ++copySequence
   const copiedValue = renderedToken.value
   try {
-    await writeText(copiedValue)
+    // Fingerprint BEFORE writing: if the digest fails, nothing has touched the
+    // clipboard yet — the reverse order would leave the code there with no
+    // clearing timer ever scheduled.
     const fingerprint = await clipboardFingerprint(copiedValue)
+    await writeText(copiedValue)
     lastCopiedFingerprint = fingerprint
     copied.value = true
     copyError.value = false

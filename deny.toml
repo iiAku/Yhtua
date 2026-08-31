@@ -52,6 +52,9 @@ ignore = true
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Workspace-internal path dependencies (yhtua -> yhtua-crypto) carry no version
+# by design; external wildcards remain denied.
+allow-wildcard-paths = true
 highlight = "all"
 
 [sources]

@@ -45,8 +45,8 @@ if (typeof document !== 'undefined') {
   })
 }
 
-export const getRemainingTime = (period: number = 30) =>
-  period - (Math.floor(Date.now() / 1000) % period)
+export { getRemainingTime } from '@yhtua/domain'
+import { getRemainingTime } from '@yhtua/domain'
 
 export const getToken = async ({
   issuer,
