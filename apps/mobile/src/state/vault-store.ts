@@ -104,6 +104,24 @@ export const addToken = (token: Token): boolean => {
   return true
 }
 
+/** Applies an edit to one stored token. Rejects anything that would break
+ * the at-rest invariant, so a caller cannot edit ciphertext into plaintext. */
+export const updateToken = (id: string, changes: { label: string; secret?: string }): boolean => {
+  const state = vaultStore.getState()
+  const existing = state.tokens.find((token) => token.id === id)
+  if (!existing) return false
+  const edited = parseAtRestToken({
+    ...existing,
+    updatedAt: Date.now(),
+    otp: { ...existing.otp, label: changes.label, secret: changes.secret ?? existing.otp.secret },
+  })
+  if (!edited) return false
+  vaultStore.setState({
+    tokens: state.tokens.map((token) => (token.id === id ? edited : token)),
+  })
+  return true
+}
+
 export const deleteToken = (id: string) => {
   const state = vaultStore.getState()
   vaultStore.setState({

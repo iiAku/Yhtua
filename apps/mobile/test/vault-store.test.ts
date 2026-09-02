@@ -19,6 +19,7 @@ import { createMockCryptoPort } from '../src/ports/crypto.mock'
 import { storagePort } from '../src/ports/storage'
 import {
   addToken,
+  updateToken,
   destroyVaultStorage,
   parseAtRestToken,
   ensureVaultHydrated,
@@ -98,5 +99,49 @@ describe('mock crypto port persistence', () => {
     const port = createMockCryptoPort(storagePort)
     await expect(port.encryptWithPassword('data', 'password')).rejects.toThrow(/not available/)
     await expect(port.decryptWithPassword('data', 'password')).rejects.toThrow(/not available/)
+  })
+})
+
+describe('mobile token editing', () => {
+  it('renaming a token keeps its encrypted secret and records a newer update time', async () => {
+    await ensureVaultHydrated()
+    const original = ciphertextToken('rename-me')
+    addToken(original)
+
+    const renamed = updateToken('rename-me', { label: 'bob@example.com' })
+
+    expect(renamed).toBe(true)
+    const stored = vaultStore.getState().tokens.find(({ id }) => id === 'rename-me')
+    expect(stored?.otp.label).toBe('bob@example.com')
+    expect(stored?.otp.secret).toBe(original.otp.secret)
+    expect(stored?.updatedAt ?? 0).toBeGreaterThan(original.updatedAt ?? 0)
+  })
+
+  it('replacing a token secret stores the new ciphertext and refuses plaintext', async () => {
+    await ensureVaultHydrated()
+    addToken(ciphertextToken('rekey-me'))
+
+    const rekeyed = updateToken('rekey-me', {
+      label: 'alice@example.com',
+      secret: 'MOCK-TkVXU0VDUkVU',
+    })
+    expect(rekeyed).toBe(true)
+    expect(vaultStore.getState().tokens.find(({ id }) => id === 'rekey-me')?.otp.secret).toBe(
+      'MOCK-TkVXU0VDUkVU',
+    )
+
+    expect(
+      updateToken('rekey-me', { label: 'alice@example.com', secret: 'JBSWY3DPEHPK3PXP' }),
+    ).toBe(false)
+    expect(vaultStore.getState().tokens.find(({ id }) => id === 'rekey-me')?.otp.secret).toBe(
+      'MOCK-TkVXU0VDUkVU',
+    )
+  })
+
+  it('editing a token that is gone changes nothing', async () => {
+    await ensureVaultHydrated()
+    const before = vaultStore.getState().tokens
+    expect(updateToken('never-existed', { label: 'ghost' })).toBe(false)
+    expect(vaultStore.getState().tokens).toEqual(before)
   })
 })

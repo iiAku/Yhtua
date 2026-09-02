@@ -47,16 +47,18 @@ const TokenRow = ({ token }: { token: Token }) => {
   }, [token])
 
   return (
-    <View style={styles.row}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{getAvatarPlaceholder(token.otp.label)}</Text>
-      </View>
-      <View style={styles.rowBody}>
-        <Text style={styles.label}>{token.otp.label}</Text>
-        <Text style={styles.code}>{code.replace(/(\d{3})(?=\d)/g, '$1 ')}</Text>
-      </View>
-      <Text style={[styles.remaining, remaining <= 5 && styles.remainingLow]}>{remaining}</Text>
-    </View>
+    <Link href={{ pathname: '/token/[id]', params: { id: token.id } }} asChild>
+      <Pressable style={styles.row}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{getAvatarPlaceholder(token.otp.label)}</Text>
+        </View>
+        <View style={styles.rowBody}>
+          <Text style={styles.label}>{token.otp.label}</Text>
+          <Text style={styles.code}>{code.replace(/(\d{3})(?=\d)/g, '$1 ')}</Text>
+        </View>
+        <Text style={[styles.remaining, remaining <= 5 && styles.remainingLow]}>{remaining}</Text>
+      </Pressable>
+    </Link>
   )
 }
 

@@ -225,19 +225,29 @@ export const normalizeTombstones = (tombstones: Tombstone[]) => {
     .slice(0, MAX_TOKENS)
 }
 
+/** A user-supplied Base32 secret, normalized. Named on its own because
+ * editing replaces the secret without re-entering the rest of the token. */
+export const base32SecretSchema = z
+  .string()
+  .transform(normalizeBase32Secret)
+  .pipe(
+    z
+      .string()
+      .min(8, { message: 'Secret must contain at least 8 Base32 characters' })
+      .max(1024, { message: 'Secret is too long' })
+      .refine(isValidBase32Secret, { message: 'Secret must be valid Base32' }),
+  )
+
+export const tokenLabelSchema = z
+  .string()
+  .trim()
+  .min(1, { message: 'Label is required' })
+  .max(MAX_LABEL_LENGTH)
+
 export const addTokenSchema = z
   .object({
-    secret: z
-      .string()
-      .transform(normalizeBase32Secret)
-      .pipe(
-        z
-          .string()
-          .min(8, { message: 'Secret must contain at least 8 Base32 characters' })
-          .max(1024, { message: 'Secret is too long' })
-          .refine(isValidBase32Secret, { message: 'Secret must be valid Base32' }),
-      ),
-    label: z.string().trim().min(1, { message: 'Label is required' }).max(MAX_LABEL_LENGTH),
+    secret: base32SecretSchema,
+    label: tokenLabelSchema,
     digits: z.number().int().min(6).max(8).default(DEFAULT_DIGITS),
   })
   .strict()
