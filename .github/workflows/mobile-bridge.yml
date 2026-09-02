@@ -118,7 +118,9 @@ jobs:
 
   app:
     name: iOS app compiles (Expo module included)
-    runs-on: macos-14
+    # macos-15, not macos-14: React Native 0.86 refuses to generate a Podfile
+    # under Xcode 15.4, which is what the macos-14 image ships.
+    runs-on: macos-15
     # The one gate that compiles YhtuaVaultModule.swift: it needs
     # ExpoModulesCore, which only exists inside a real prebuilt Xcode
     # workspace. Without this the Expo module's Swift first compiles on an
