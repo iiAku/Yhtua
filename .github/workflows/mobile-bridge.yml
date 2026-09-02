@@ -167,9 +167,10 @@ jobs:
           xcodebuild build \
             -workspace Yhtua.xcworkspace \
             -scheme Yhtua \
-            -configuration Debug \
+            -configuration Release \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             > "$RUNNER_TEMP/xcodebuild.log" 2>&1
           status=$?
@@ -186,3 +187,43 @@ jobs:
           name: xcodebuild-log
           path: ${{ runner.temp }}/xcodebuild.log
           if-no-files-found: warn
+      # Compiling proves the module type-checks; it does not prove the app
+      # survives launch. An Expo module that fails to register, a missing
+      # native symbol, or a crash in the privacy cover's OnCreate all compile
+      # perfectly and then kill the app on the first frame — which is exactly
+      # how the Android build broke earlier in this project.
+      - name: Launch the app on a simulator
+        run: |
+          set -euo pipefail
+          # Chosen from what the image actually has, not hard-coded: the
+          # Xcode version on this runner has already moved twice.
+          devicetype=$(xcrun simctl list devicetypes \
+            | grep -o 'com.apple.CoreSimulator.SimDeviceType.iPhone-[0-9A-Za-z-]*' | tail -1)
+          runtime=$(xcrun simctl list runtimes \
+            | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]*' | tail -1)
+          echo "simulator: $devicetype on $runtime"
+          device=$(xcrun simctl create yhtua-ci "$devicetype" "$runtime")
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+
+          app=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphonesimulator" \
+            -maxdepth 1 -name 'Yhtua.app' | head -1)
+          test -n "$app"
+          xcrun simctl install "$device" "$app"
+          xcrun simctl launch "$device" fr.gendrey.yhtua
+
+          # A crash is not instant: the JS bundle loads, the lock host starts,
+          # the vault module registers. Give it a beat, then insist it is
+          # still alive and left no crash report behind.
+          sleep 20
+          if ! xcrun simctl spawn "$device" launchctl list | grep -q fr.gendrey.yhtua; then
+            echo "The app is no longer running after launch" >&2
+            find ~/Library/Logs/DiagnosticReports -name 'Yhtua*' -exec cat {} \; | head -80
+            exit 1
+          fi
+          if find ~/Library/Logs/DiagnosticReports -name 'Yhtua*' | grep -q .; then
+            echo "The app produced a crash report" >&2
+            find ~/Library/Logs/DiagnosticReports -name 'Yhtua*' -exec cat {} \; | head -80
+            exit 1
+          fi
+          echo "Yhtua launched and stayed running on the simulator"
