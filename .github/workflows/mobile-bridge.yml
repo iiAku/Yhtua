@@ -17,9 +17,9 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
-      - 'apps/mobile/modules/**'
-      - 'apps/mobile/app.json'
-      - 'apps/mobile/eas.json'
+      - 'apps/mobile/**'
+      - 'package.json'
+      - 'bun.lock'
       - '.github/workflows/mobile-bridge.yml'
   pull_request:
     paths:
@@ -30,9 +30,9 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'rust-toolchain.toml'
-      - 'apps/mobile/modules/**'
-      - 'apps/mobile/app.json'
-      - 'apps/mobile/eas.json'
+      - 'apps/mobile/**'
+      - 'package.json'
+      - 'bun.lock'
       - '.github/workflows/mobile-bridge.yml'
 
 concurrency:
@@ -94,9 +94,70 @@ jobs:
             "$RUNNER_TEMP/yhtua-vault-ios/bindings/yhtua_mobile.swift" \
             bridge/ios/ConsumerCheck/consumer.swift \
             -I "$RUNNER_TEMP/yhtua-vault-ios/include"
+      # Everything in the module except YhtuaVaultModule.swift is plain
+      # Foundation/UIKit/Security, so it can be typechecked here without an
+      # Xcode project. Cheap enough to run on every bridge push, and it is
+      # what catches a Keychain, pasteboard or lifecycle mistake minutes
+      # after the commit instead of at the next EAS build.
+      - name: Typecheck the module's non-Expo Swift against the iOS SDK
+        run: |
+          xcrun -sdk iphonesimulator swiftc -typecheck \
+            -target arm64-apple-ios15.1-simulator \
+            "$RUNNER_TEMP/yhtua-vault-ios/bindings/yhtua_mobile.swift" \
+            apps/mobile/modules/yhtua-vault/ios/KeyStore.swift \
+            apps/mobile/modules/yhtua-vault/ios/SelfTest.swift \
+            apps/mobile/modules/yhtua-vault/ios/SensitiveClipboard.swift \
+            apps/mobile/modules/yhtua-vault/ios/PrivacyCover.swift \
+            -I "$RUNNER_TEMP/yhtua-vault-ios/include"
       - name: Upload XCFramework artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: YhtuaMobile.xcframework
           path: ${{ runner.temp }}/yhtua-vault-ios/YhtuaMobile.xcframework
           if-no-files-found: error
+
+  app:
+    name: iOS app compiles (Expo module included)
+    runs-on: macos-14
+    # The one gate that compiles YhtuaVaultModule.swift: it needs
+    # ExpoModulesCore, which only exists inside a real prebuilt Xcode
+    # workspace. Without this the Expo module's Swift first compiles on an
+    # EAS builder, minutes of queue after the mistake was made.
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+      - name: Install dependencies (frozen)
+        run: bun install --frozen-lockfile
+      - name: Set up Rust (pinned by rust-toolchain.toml)
+        run: rustup show active-toolchain
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: . -> target
+      # The same hook EAS runs, so a break here is a break there.
+      - name: Build the vendored Rust XCFramework
+        run: bash scripts/eas-pre-install.sh
+      - name: Generate the iOS project
+        working-directory: apps/mobile
+        run: bunx expo prebuild --platform ios --no-install
+      - name: Install pods
+        working-directory: apps/mobile/ios
+        run: pod install
+      - name: Build for the simulator
+        working-directory: apps/mobile/ios
+        run: |
+          # The pipe would otherwise swallow xcodebuild's exit status and turn
+          # a failed compile into a green job.
+          set -o pipefail
+          xcodebuild build \
+            -workspace Yhtua.xcworkspace \
+            -scheme Yhtua \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -60
