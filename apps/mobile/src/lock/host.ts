@@ -127,6 +127,18 @@ export const requestUnlock = async () => {
   }
 }
 
+/** Tells the native privacy cover that the UI has drawn a frame safe to show.
+ * Lives here rather than in the layout so the native module stays behind one
+ * seam, and so a build without it is a no-op rather than a crash. */
+export const acknowledgeSafeFrame = async () => {
+  try {
+    const { dismissPrivacyCover } = await import('../../modules/yhtua-vault')
+    await dismissPrivacyCover()
+  } catch {
+    // No native module (Expo Go): there is no cover to dismiss.
+  }
+}
+
 const onAppStateChange = (status: AppStateStatus) => {
   // iOS fires 'inactive' for the biometric sheet, control-center pulls and the
   // app switcher, then 'active' again when they are dismissed. Only a RECORDED

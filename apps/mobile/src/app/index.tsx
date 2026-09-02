@@ -1,50 +1,11 @@
-import { getAvatarPlaceholder, getRemainingTime, type Token } from '@yhtua/domain'
+import { getAvatarPlaceholder, type Token } from '@yhtua/domain'
 import { Link } from 'expo-router'
-import * as OTPAuth from 'otpauth'
-import { useEffect, useState } from 'react'
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
-import { getDecryptedSecret } from '../state/secret-cache'
+import { formatCode, useTotpCode } from '../totp'
 import { useVault } from '../state/vault-store'
 
-const codeFor = async (token: Token): Promise<string> => {
-  const secret = token.otp.encrypted ? await getDecryptedSecret(token.otp.secret) : token.otp.secret
-  const totp = new OTPAuth.TOTP({
-    issuer: token.otp.issuer,
-    label: token.otp.label,
-    algorithm: token.otp.algorithm,
-    digits: token.otp.digits,
-    period: token.otp.period,
-    secret: OTPAuth.Secret.fromBase32(secret.toUpperCase()),
-  })
-  return totp.generate()
-}
-
 const TokenRow = ({ token }: { token: Token }) => {
-  const [code, setCode] = useState('••••••')
-  const [remaining, setRemaining] = useState(getRemainingTime(token.otp.period))
-
-  useEffect(() => {
-    let cancelled = false
-    const refresh = () => {
-      void codeFor(token)
-        .then((value) => {
-          if (!cancelled) setCode(value)
-        })
-        .catch(() => {
-          if (!cancelled) setCode('••••••')
-        })
-    }
-    refresh()
-    const interval = setInterval(() => {
-      const left = getRemainingTime(token.otp.period)
-      setRemaining(left)
-      if (left === token.otp.period) refresh()
-    }, 1000)
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
-  }, [token])
+  const { code, remaining } = useTotpCode(token)
 
   return (
     <Link href={{ pathname: '/token/[id]', params: { id: token.id } }} asChild>
@@ -54,7 +15,7 @@ const TokenRow = ({ token }: { token: Token }) => {
         </View>
         <View style={styles.rowBody}>
           <Text style={styles.label}>{token.otp.label}</Text>
-          <Text style={styles.code}>{code.replace(/(\d{3})(?=\d)/g, '$1 ')}</Text>
+          <Text style={styles.code}>{formatCode(code)}</Text>
         </View>
         <Text style={[styles.remaining, remaining <= 5 && styles.remainingLow]}>{remaining}</Text>
       </Pressable>

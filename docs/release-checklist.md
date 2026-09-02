@@ -37,8 +37,13 @@ registered as a test device, `eas login`.
    state; biometric re-enrollment invalidates the vault (recovery via YHP2
    documented in-app).
    3b. Native lifecycle and clipboard, which no CI job can prove:
-   - the app switcher shows a BLURRED card, never a readable code, including
-     when triggered by a phone call and by the notification-centre pull;
+   - the app switcher shows an OPAQUE card with no trace of the screen
+     underneath (a blur is not redaction), including when triggered by a
+     phone call and by the notification-centre pull;
+   - on resume after a real backgrounding the first visible frame is the lock
+     screen, never the vault — the cover is held until JS acknowledges;
+   - a Face ID prompt or control-centre pull uncovers immediately on
+     dismissal (those never backgrounded the app);
    - a copied code pastes successfully into another app (backgrounding must
      not wipe it), disappears on its own within ~30s, and is gone
      immediately after an explicit lock;

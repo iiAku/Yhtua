@@ -2,7 +2,13 @@ import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { getLockState, requestUnlock, startLockHost, subscribeLockState } from '../lock/host'
+import {
+  acknowledgeSafeFrame,
+  getLockState,
+  requestUnlock,
+  startLockHost,
+  subscribeLockState,
+} from '../lock/host'
 
 // The mobile client enforces the shared lock machine: nothing renders behind
 // the gate until the machine says `unlocked` (or `uninitialized`, where the
@@ -18,6 +24,15 @@ export default function RootLayout() {
     void startLockHost()
     return unsubscribe
   }, [])
+
+  // After a real backgrounding the native cover stays up until this runs, so
+  // the first frame the user sees on resume is one this layout has already
+  // decided — the lock gate, not the vault it was showing when it left.
+  // Deliberately no dependency array: every committed render re-acknowledges.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => void acknowledgeSafeFrame())
+    return () => cancelAnimationFrame(frame)
+  })
 
   if (!GATE_OPEN.has(lockState)) {
     return (

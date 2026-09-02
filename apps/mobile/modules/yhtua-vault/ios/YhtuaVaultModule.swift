@@ -12,14 +12,22 @@ public class YhtuaVaultModule: Module {
 
     // The app-switcher snapshot is taken before any JS listener runs, so the
     // screen is covered on the UIKit notification itself. Installed for the
-    // module's whole lifetime — there is no JS call that can turn it off.
+    // module's whole lifetime — there is no JS call that can turn it off,
+    // only one that says a safe frame is now on screen.
     OnCreate {
-      LifecycleMask.install()
+      PrivacyCover.install()
     }
 
     OnDestroy {
-      LifecycleMask.uninstall()
+      PrivacyCover.uninstall()
     }
+
+    // The JS lock host's acknowledgment that it has drawn a frame safe to
+    // show after a real backgrounding. Never calling it leaves the app
+    // covered, which is the fail-closed direction.
+    AsyncFunction("dismissPrivacyCover") { () in
+      PrivacyCover.dismiss()
+    }.runOnQueue(.main)
 
     AsyncFunction("vaultExists") { () -> Bool in
       try mapErrors { try KeyStore.keyExists() }

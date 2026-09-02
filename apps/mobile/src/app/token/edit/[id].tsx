@@ -2,8 +2,8 @@ import { base32SecretSchema, tokenLabelSchema } from '@yhtua/domain'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
-import { getCryptoPort } from '../../../ports'
-import { updateToken, useVault } from '../../../state/vault-store'
+import { editToken } from '../../../state/token-commands'
+import { useVault } from '../../../state/vault-store'
 
 // Editing is rename plus OPTIONAL secret replacement. The stored secret is
 // never decrypted for display: replacing it means typing a new one, which
@@ -41,20 +41,16 @@ export default function EditToken() {
       return
     }
     setSaving(true)
-    try {
-      const ciphertext = parsedSecret
-        ? await getCryptoPort().encryptSecret(parsedSecret.data)
-        : undefined
-      if (!updateToken(token.id, { label: parsedLabel.data, secret: ciphertext })) {
-        setError('The token could not be updated')
-        return
-      }
+    const result = await editToken(token.id, {
+      label: parsedLabel.data,
+      secret: parsedSecret ? parsedSecret.data : undefined,
+    })
+    setSaving(false)
+    if (result.ok) {
       router.back()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Encryption failed')
-    } finally {
-      setSaving(false)
+      return
     }
+    setError(result.message)
   }
 
   return (

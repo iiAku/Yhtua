@@ -17,6 +17,7 @@ type YhtuaVaultNative = {
   destroyVault(): Promise<void>
   copySensitive(value: string, ttlSeconds: number): Promise<boolean>
   clearOwnedClipboard(): Promise<boolean>
+  dismissPrivacyCover(): Promise<void>
   runSelfTest(fixtureJson: string): Promise<string>
 }
 
@@ -57,6 +58,13 @@ export const sensitiveClipboard = native
       clearOwned: () => native.clearOwnedClipboard(),
     }
   : null
+
+/** Tells the native privacy cover that a frame safe to show is on screen.
+ * After a real backgrounding the cover stays up until this is called, so the
+ * app-switcher snapshot and the first frame after resume can never be the
+ * unlocked vault. */
+export const dismissPrivacyCover = (): Promise<void> =>
+  native ? native.dismissPrivacyCover() : Promise.resolve()
 
 export const nativeCryptoPort: CryptoPort | null = native
   ? {

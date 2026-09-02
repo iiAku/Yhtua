@@ -1,11 +1,8 @@
 import { addTokenSchema, DEFAULT_PERIOD } from '@yhtua/domain'
 import { Link, router } from 'expo-router'
-import { randomUUID } from 'expo-crypto'
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
-import { dispatch, getLockState } from '../../lock/host'
-import { getCryptoPort } from '../../ports'
-import { addToken } from '../../state/vault-store'
+import { createToken } from '../../state/token-commands'
 
 export default function NewToken() {
   const [label, setLabel] = useState('')
@@ -21,40 +18,22 @@ export default function NewToken() {
       return
     }
     setSaving(true)
-    try {
-      const crypto = getCryptoPort()
-      await crypto.ensureEncryptionKey()
-      // The secret is encrypted IMMEDIATELY; plaintext never reaches state.
-      const ciphertext = await crypto.encryptSecret(parsed.data.secret)
-      const added = addToken({
-        id: randomUUID(),
-        updatedAt: Date.now(),
-        otp: {
-          issuer: '',
-          label: parsed.data.label,
-          algorithm: 'SHA1',
-          digits: parsed.data.digits,
-          period: DEFAULT_PERIOD,
-          secret: ciphertext,
-          encrypted: true,
-        },
-      })
-      if (!added) {
-        setError('A token with this identity already exists')
-        return
-      }
-      // First token: the vault now exists — tell the lock machine so
-      // background/idle locking engages. If the process dies before the
-      // persist write lands, the next hydration recovers the true state.
-      if (getLockState() === 'uninitialized') {
-        dispatch({ type: 'VAULT_CREATED' })
-      }
+    // createToken owns encryption, the at-rest invariant and the commit-time
+    // lock check; this screen owns only the form.
+    const result = await createToken({
+      issuer: '',
+      label: parsed.data.label,
+      algorithm: 'SHA1',
+      digits: parsed.data.digits,
+      period: DEFAULT_PERIOD,
+      secret: parsed.data.secret,
+    })
+    setSaving(false)
+    if (result.ok) {
       router.back()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Encryption failed')
-    } finally {
-      setSaving(false)
+      return
     }
+    setError(result.message)
   }
 
   return (

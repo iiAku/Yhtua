@@ -1,12 +1,9 @@
 import { CameraView, useCameraPermissions } from 'expo-camera'
-import { randomUUID } from 'expo-crypto'
 import { router } from 'expo-router'
 import { useRef, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { parseOtpauthUri } from '../../otpauth-uri'
-import { getCryptoPort } from '../../ports'
-import { dispatch, getLockState } from '../../lock/host'
-import { addToken } from '../../state/vault-store'
+import { createToken } from '../../state/token-commands'
 
 // The scanned secret is encrypted and stored HERE rather than handed back to
 // the entry form: a navigation parameter is state the router serializes and
@@ -22,40 +19,22 @@ export default function ScanToken() {
     if (handling.current) return
     handling.current = true
     setError(null)
-    try {
-      const scanned = parseOtpauthUri(data)
-      if (!scanned) {
-        setError('That QR code is not an authenticator token Yhtua can store.')
-        return
-      }
-      const crypto = getCryptoPort()
-      await crypto.ensureEncryptionKey()
-      const ciphertext = await crypto.encryptSecret(scanned.secret)
-      const added = addToken({
-        id: randomUUID(),
-        updatedAt: Date.now(),
-        otp: {
-          issuer: scanned.issuer,
-          label: scanned.label,
-          algorithm: scanned.algorithm,
-          digits: scanned.digits,
-          period: scanned.period,
-          secret: ciphertext,
-          encrypted: true,
-        },
-      })
-      if (!added) {
-        setError('That token could not be added.')
-        return
-      }
-      if (getLockState() === 'uninitialized') dispatch({ type: 'VAULT_CREATED' })
-      router.back()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not add the scanned token')
-    } finally {
-      // Re-arm only on failure; a success has already navigated away.
+    const scanned = parseOtpauthUri(data)
+    if (!scanned) {
+      setError('That QR code is not an authenticator token Yhtua can store.')
       handling.current = false
+      return
     }
+    const result = await createToken(scanned)
+    if (result.ok) {
+      // Deliberately NOT re-armed: router.back() does not unmount the camera
+      // synchronously, and a camera reports the same code many times a
+      // second — re-arming here would run a second transaction.
+      router.back()
+      return
+    }
+    setError(result.message)
+    handling.current = false
   }
 
   if (!permission) return <View style={styles.screen} />

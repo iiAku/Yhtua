@@ -1,10 +1,9 @@
-import { getAvatarPlaceholder, getRemainingTime, type Token } from '@yhtua/domain'
+import { getAvatarPlaceholder, type Token } from '@yhtua/domain'
 import { Link, router, useLocalSearchParams } from 'expo-router'
-import * as OTPAuth from 'otpauth'
 import { useEffect, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { copyCode, isClipboardAvailable } from '../../clipboard'
-import { getDecryptedSecret } from '../../state/secret-cache'
+import { formatCode, generateCode, useTotpCode } from '../../totp'
 import { deleteToken, useVault } from '../../state/vault-store'
 
 // Token detail: the full-size code, and the only place a token can be edited
@@ -67,32 +66,24 @@ export default function TokenDetail() {
 }
 
 const CodePanel = ({ token }: { token: Token }) => {
-  const [code, setCode] = useState('••••••')
-  const [remaining, setRemaining] = useState(getRemainingTime(token.otp.period))
+  const { code, remaining } = useTotpCode(token)
   const [copyStatus, setCopyStatus] = useState<string | null>(null)
+  const canCopy = code !== null && isClipboardAvailable()
 
-  useEffect(() => {
-    let cancelled = false
-    const refresh = () => {
-      void generateCode(token)
-        .then((value) => {
-          if (!cancelled) setCode(value)
-        })
-        .catch(() => {
-          if (!cancelled) setCode('••••••')
-        })
+  // Regenerated at press time rather than copied from the rendered value: the
+  // code on screen may belong to the previous time step by the moment the
+  // button is tapped, and a stale code pasted into a login form fails.
+  const copy = async () => {
+    setCopyStatus(null)
+    try {
+      const fresh = await generateCode(token)
+      setCopyStatus(
+        (await copyCode(fresh)) ? 'Copied — clears itself in 30s' : 'Could not copy the code',
+      )
+    } catch {
+      setCopyStatus('Could not copy the code')
     }
-    refresh()
-    const interval = setInterval(() => {
-      const left = getRemainingTime(token.otp.period)
-      setRemaining(left)
-      if (left === token.otp.period) refresh()
-    }, 1000)
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
-  }, [token])
+  }
 
   return (
     <View style={styles.panel}>
@@ -101,18 +92,14 @@ const CodePanel = ({ token }: { token: Token }) => {
       </View>
       <Text style={styles.label}>{token.otp.label}</Text>
       {token.otp.issuer ? <Text style={styles.issuer}>{token.otp.issuer}</Text> : null}
-      <Text style={styles.code}>{code.replace(/(\d{3})(?=\d)/g, '$1 ')}</Text>
+      <Text style={styles.code}>{formatCode(code)}</Text>
       <Text style={[styles.remaining, remaining <= 5 && styles.remainingLow]}>
         {remaining}s remaining
       </Text>
       <Pressable
-        style={[styles.copy, !isClipboardAvailable() && styles.disabled]}
-        disabled={!isClipboardAvailable()}
-        onPress={() => {
-          void copyCode(code).then((copied) =>
-            setCopyStatus(copied ? 'Copied — clears in 30s' : 'Copy failed'),
-          )
-        }}
+        style={[styles.copy, !canCopy && styles.disabled]}
+        disabled={!canCopy}
+        onPress={() => void copy()}
       >
         <Text style={styles.copyText}>Copy code</Text>
       </Pressable>
@@ -123,18 +110,6 @@ const CodePanel = ({ token }: { token: Token }) => {
       </Text>
     </View>
   )
-}
-
-const generateCode = async (token: Token): Promise<string> => {
-  const secret = token.otp.encrypted ? await getDecryptedSecret(token.otp.secret) : token.otp.secret
-  return new OTPAuth.TOTP({
-    issuer: token.otp.issuer,
-    label: token.otp.label,
-    algorithm: token.otp.algorithm,
-    digits: token.otp.digits,
-    period: token.otp.period,
-    secret: OTPAuth.Secret.fromBase32(secret.toUpperCase()),
-  }).generate()
 }
 
 const styles = StyleSheet.create({
