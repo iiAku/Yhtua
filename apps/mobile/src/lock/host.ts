@@ -127,17 +127,48 @@ export const requestUnlock = async () => {
   }
 }
 
-/** Tells the native privacy cover that the UI has drawn a frame safe to show.
- * Lives here rather than in the layout so the native module stays behind one
- * seam, and so a build without it is a no-op rather than a crash. */
-export const acknowledgeSafeFrame = async () => {
+/** Two-step acknowledgment of the native privacy cover.
+ *
+ * `beginSafeFrame` reads the installed cover's generation while the layout is
+ * committing; the returned function dismisses THAT generation once the frame
+ * is on screen. A backgrounding in between raises a new cover with a new
+ * number and the stale acknowledgment is refused.
+ *
+ * A transport failure retries with backoff: the cover blocks interaction, so
+ * a single dropped call must not be able to strand the session behind it.
+ * The retry re-reads the generation, so it can never uncover a newer cover —
+ * there is deliberately no timeout that uncovers regardless.
+ */
+export const beginSafeFrame = async (): Promise<(() => Promise<void>) | null> => {
+  let module: typeof import('../../modules/yhtua-vault')
   try {
-    const { dismissPrivacyCover } = await import('../../modules/yhtua-vault')
-    await dismissPrivacyCover()
+    module = await import('../../modules/yhtua-vault')
   } catch {
-    // No native module (Expo Go): there is no cover to dismiss.
+    return null // No native module (Expo Go): there is no cover.
   }
+  const pending = module.privacyCoverGeneration()
+  if (!pending) return null
+  let generation: number
+  try {
+    generation = await pending
+  } catch {
+    return null
+  }
+
+  const acknowledge = async (attempt = 0): Promise<void> => {
+    try {
+      await module.dismissPrivacyCover(generation)
+    } catch {
+      if (attempt >= MAX_ACKNOWLEDGE_ATTEMPTS) return
+      const retry = await beginSafeFrame()
+      setTimeout(() => void retry?.(), ACKNOWLEDGE_RETRY_MS * (attempt + 1))
+    }
+  }
+  return () => acknowledge()
 }
+
+const MAX_ACKNOWLEDGE_ATTEMPTS = 5
+const ACKNOWLEDGE_RETRY_MS = 250
 
 const onAppStateChange = (status: AppStateStatus) => {
   // iOS fires 'inactive' for the biometric sheet, control-center pulls and the

@@ -3,7 +3,7 @@ import { StatusBar } from 'expo-status-bar'
 import { useEffect, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import {
-  acknowledgeSafeFrame,
+  beginSafeFrame,
   getLockState,
   requestUnlock,
   startLockHost,
@@ -27,11 +27,22 @@ export default function RootLayout() {
 
   // After a real backgrounding the native cover stays up until this runs, so
   // the first frame the user sees on resume is one this layout has already
-  // decided — the lock gate, not the vault it was showing when it left.
-  // Deliberately no dependency array: every committed render re-acknowledges.
+  // decided — the lock gate, not the vault it was showing when it left. The
+  // cover generation is read HERE, during the commit, and acknowledged after
+  // the frame is painted, so a backgrounding in between cannot be uncovered
+  // by this render's acknowledgment. Deliberately no dependency array: every
+  // committed render re-acknowledges, which is also the retry path.
   useEffect(() => {
-    const frame = requestAnimationFrame(() => void acknowledgeSafeFrame())
-    return () => cancelAnimationFrame(frame)
+    let cancelled = false
+    let frame: number | undefined
+    void beginSafeFrame().then((acknowledge) => {
+      if (cancelled || !acknowledge) return
+      frame = requestAnimationFrame(() => void acknowledge())
+    })
+    return () => {
+      cancelled = true
+      if (frame !== undefined) cancelAnimationFrame(frame)
+    }
   })
 
   if (!GATE_OPEN.has(lockState)) {

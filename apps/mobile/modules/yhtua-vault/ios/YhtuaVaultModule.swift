@@ -22,11 +22,17 @@ public class YhtuaVaultModule: Module {
       PrivacyCover.uninstall()
     }
 
-    // The JS lock host's acknowledgment that it has drawn a frame safe to
-    // show after a real backgrounding. Never calling it leaves the app
-    // covered, which is the fail-closed direction.
-    AsyncFunction("dismissPrivacyCover") { () in
-      PrivacyCover.dismiss()
+    // The JS lock host reads the current cover generation while it commits a
+    // render, then acknowledges THAT generation once the frame is on screen.
+    // Both hops run on the main queue, in order with the UIKit lifecycle
+    // notifications, so a cover raised in between bumps the number and the
+    // stale acknowledgment is refused.
+    AsyncFunction("privacyCoverGeneration") { () -> Int in
+      PrivacyCover.currentGeneration()
+    }.runOnQueue(.main)
+
+    AsyncFunction("dismissPrivacyCover") { (generation: Int) -> Bool in
+      PrivacyCover.dismiss(generation: generation)
     }.runOnQueue(.main)
 
     AsyncFunction("vaultExists") { () -> Bool in

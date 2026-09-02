@@ -21,6 +21,10 @@ enum PrivacyCover {
   private static var coverView: UIView?
   private static var observers: [NSObjectProtocol] = []
   private static var didEnterBackground = false
+  // Every cover installed gets a number. JavaScript acknowledges a specific
+  // one, so an acknowledgment written for an older frame cannot dismiss a
+  // cover raised by a later backgrounding.
+  private static var generation = 0
 
   static func install() {
     guard observers.isEmpty else { return }
@@ -48,12 +52,18 @@ enum PrivacyCover {
     hide()
   }
 
+  static func currentGeneration() -> Int { generation }
+
   /// Called by the JS lock host once the layout has drawn a frame that is safe
-  /// to show. Failing to call it leaves the app covered — the fail-closed
-  /// direction, and visible enough to be reported rather than silent.
-  static func dismiss() {
+  /// to show, naming the cover generation that frame was decided against. A
+  /// mismatch means another backgrounding happened in between, so the
+  /// acknowledgment is stale and the cover stays — the fail-closed direction.
+  @discardableResult
+  static func dismiss(generation acknowledged: Int) -> Bool {
+    guard acknowledged == generation else { return false }
     didEnterBackground = false
     hide()
+    return true
   }
 
   private static func windows() -> [UIWindow] {
@@ -66,6 +76,7 @@ enum PrivacyCover {
   private static func show() {
     guard coverView == nil, let window = windows().first(where: { $0.isKeyWindow }) ?? windows().first
     else { return }
+    generation += 1
     let cover = UIView(frame: window.bounds)
     // Secret-independent by construction: one flat colour, the app's own
     // background, and nothing drawn from the screen underneath.

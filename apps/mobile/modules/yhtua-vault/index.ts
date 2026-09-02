@@ -17,7 +17,8 @@ type YhtuaVaultNative = {
   destroyVault(): Promise<void>
   copySensitive(value: string, ttlSeconds: number): Promise<boolean>
   clearOwnedClipboard(): Promise<boolean>
-  dismissPrivacyCover(): Promise<void>
+  privacyCoverGeneration(): Promise<number>
+  dismissPrivacyCover(generation: number): Promise<boolean>
   runSelfTest(fixtureJson: string): Promise<string>
 }
 
@@ -59,12 +60,18 @@ export const sensitiveClipboard = native
     }
   : null
 
+/** The number of the cover currently installed. Read while a render is being
+ * committed, so the acknowledgment that follows names the cover that render
+ * was decided against. */
+export const privacyCoverGeneration = (): Promise<number> | null =>
+  native ? native.privacyCoverGeneration() : null
+
 /** Tells the native privacy cover that a frame safe to show is on screen.
  * After a real backgrounding the cover stays up until this is called, so the
  * app-switcher snapshot and the first frame after resume can never be the
- * unlocked vault. */
-export const dismissPrivacyCover = (): Promise<void> =>
-  native ? native.dismissPrivacyCover() : Promise.resolve()
+ * unlocked vault. Returns false when the acknowledgment is stale. */
+export const dismissPrivacyCover = (generation: number): Promise<boolean> | null =>
+  native ? native.dismissPrivacyCover(generation) : null
 
 export const nativeCryptoPort: CryptoPort | null = native
   ? {

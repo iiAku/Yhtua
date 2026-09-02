@@ -29,17 +29,31 @@ export const useTotpCode = (token: Token): { code: string | null; remaining: num
 
   useEffect(() => {
     let cancelled = false
+    // The step a DISPLAYED code belongs to. Advanced only once a code for it
+    // is actually installed: marking it early would both leave the previous
+    // step's code on screen while a decrypt is pending, and — if that decrypt
+    // fails — suppress every retry until the next period.
     let shownStep = -1
+    let inFlight = false
 
     const refresh = () => {
+      if (inFlight) return
       const step = currentTimeStep(token.otp.period)
-      shownStep = step
+      inFlight = true
       void generateCode(token)
         .then((value) => {
-          // A decrypt that resolves after the step moved on is stale.
-          if (!cancelled && currentTimeStep(token.otp.period) === step) setCode(value)
+          inFlight = false
+          if (cancelled) return
+          // A decrypt that resolved after the counter moved on is stale.
+          if (currentTimeStep(token.otp.period) !== step) {
+            setCode(null)
+            return
+          }
+          shownStep = step
+          setCode(value)
         })
         .catch(() => {
+          inFlight = false
           if (!cancelled) setCode(null)
         })
     }
@@ -48,7 +62,12 @@ export const useTotpCode = (token: Token): { code: string | null; remaining: num
     const interval = setInterval(() => {
       if (cancelled) return
       setRemaining(getRemainingTime(token.otp.period))
-      if (currentTimeStep(token.otp.period) !== shownStep) refresh()
+      if (currentTimeStep(token.otp.period) !== shownStep) {
+        // The displayed code belongs to a step that has passed: stop showing
+        // it before the replacement arrives.
+        setCode(null)
+        refresh()
+      }
     }, 1000)
     return () => {
       cancelled = true
