@@ -195,12 +195,9 @@ jobs:
       - name: Launch the app on a simulator
         run: |
           set -euo pipefail
-          # Chosen from what the image actually has, not hard-coded: the
-          # Xcode version on this runner has already moved twice.
-          devicetype=$(xcrun simctl list devicetypes \
-            | grep -o 'com.apple.CoreSimulator.SimDeviceType.iPhone-[0-9A-Za-z-]*' | tail -1)
-          runtime=$(xcrun simctl list runtimes \
-            | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]*' | tail -1)
+          selection=$(python3 scripts/pick-ios-simulator.py)
+          devicetype=${selection%% *}
+          runtime=${selection##* }
           echo "simulator: $devicetype on $runtime"
           device=$(xcrun simctl create yhtua-ci "$devicetype" "$runtime")
           xcrun simctl boot "$device"
