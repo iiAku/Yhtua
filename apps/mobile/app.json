@@ -41,6 +41,12 @@
           "imageWidth": 76
         }
       ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Yhtua uses the camera only to scan authenticator QR codes. Nothing is recorded or sent anywhere."
+        }
+      ],
       "expo-sharing"
     ],
     "experiments": {

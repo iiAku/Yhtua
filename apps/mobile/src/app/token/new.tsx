@@ -1,5 +1,5 @@
 import { addTokenSchema, DEFAULT_PERIOD } from '@yhtua/domain'
-import { router } from 'expo-router'
+import { Link, router } from 'expo-router'
 import { randomUUID } from 'expo-crypto'
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
@@ -59,6 +59,11 @@ export default function NewToken() {
 
   return (
     <View style={styles.screen}>
+      <Link href="/token/scan" asChild>
+        <Pressable style={styles.scan}>
+          <Text style={styles.scanText}>Scan a QR code instead</Text>
+        </Pressable>
+      </Link>
       <Text style={styles.fieldLabel}>Label</Text>
       <TextInput
         style={styles.input}
@@ -95,6 +100,14 @@ export default function NewToken() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0B0B0F', padding: 16, gap: 8 },
   fieldLabel: { color: '#8A8578', fontSize: 13, marginTop: 8 },
+  scan: {
+    alignItems: 'center',
+    paddingVertical: 13,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#23232B',
+  },
+  scanText: { color: '#8A8578', fontWeight: '500' },
   input: {
     borderRadius: 12,
     borderWidth: 1,

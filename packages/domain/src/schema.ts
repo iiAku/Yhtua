@@ -56,7 +56,10 @@ const algorithmSchema = z
   .transform((value) => value.replace(/-/g, '').toUpperCase())
   .pipe(z.enum(['SHA1', 'SHA256', 'SHA512']))
 
-const otpSchema = z
+/** The OTP parameters Yhtua can store. Exported because untrusted sources
+ * of these fields — a scanned QR code — must be validated against the same
+ * rules the vault itself enforces, not a second copy of them. */
+export const otpParametersSchema = z
   .object({
     issuer: z.string().trim().max(MAX_LABEL_LENGTH).optional().default(''),
     label: z.string().trim().min(1).max(MAX_LABEL_LENGTH),
@@ -77,7 +80,7 @@ export const tokenSchema = z
     id: z.string().min(1).max(MAX_ID_LENGTH),
     lastUsed: timestampSchema.optional(),
     updatedAt: timestampSchema.optional(),
-    otp: otpSchema,
+    otp: otpParametersSchema,
   })
   .strict()
 
