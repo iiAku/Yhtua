@@ -24,10 +24,12 @@ registered as a test device, `eas login`.
    pre-install hook build it) and the Mobile bridge workflow is green on the
    release commit. Both its jobs gate: `Rust -> Swift golden gate` runs every
    golden vector through real Swift->Rust and packages the XCFramework, and
-   `iOS app compiles` prebuilds the app and runs a full simulator xcodebuild,
-   so no Swift in the native module reaches an EAS builder uncompiled. A
-   green bridge proves compilation and format conformance, never runtime
-   behaviour — that is what the device steps below are for.
+   `iOS app compiles` prebuilds the app, runs a full Release simulator
+   xcodebuild and then LAUNCHES the result, requiring it to stay running with
+   no crash report — so neither uncompiled Swift nor an app that dies on its
+   first frame can reach an EAS builder. A green bridge still proves nothing
+   about biometrics, biometry-bound Keychain items, pasteboard expiry or the
+   app-switcher card: that is what the device steps below are for.
 2. Development build on a PHYSICAL device: `eas build --profile development`
    (Face ID and Keychain access control behave differently on simulators).
    Run the in-app vault self-test (dev menu → Vault self-test) and require

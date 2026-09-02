@@ -52,9 +52,13 @@ Status (2026-09-02):
   `Mobile bridge` workflow typechecks the module's Foundation/UIKit
   sources against the iOS SDK and a second job prebuilds the app,
   installs pods and runs a full simulator `xcodebuild`, which is the only
-  way to compile `YhtuaVaultModule.swift` (it needs ExpoModulesCore).
-  Runtime behaviour — Face ID, Keychain access control, pasteboard
-  expiry, app-switcher appearance — remains device-gated in
+  way to compile `YhtuaVaultModule.swift` (it needs ExpoModulesCore),
+  then installs that Release build on a simulator, launches it and
+  requires it to still be running with no crash report. Compiling proves
+  the module type-checks; launching proves it registers and does not take
+  the app down on the first frame. Runtime behaviour that a simulator
+  cannot judge — Face ID, biometry-bound Keychain access control,
+  pasteboard expiry, the app-switcher card — remains device-gated in
   `release-checklist.md`.
 - **Blocked on physical resources** (Apple Developer Program membership,
   a physical iPhone, `eas login`): sub-gates 6b (on-device self-test,
