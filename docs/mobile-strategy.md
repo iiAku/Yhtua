@@ -48,9 +48,13 @@ Status (2026-09-02):
   pre-install hook, the YHP2 transfer policy (node-tested over the port),
   the Phase 7 feature set (token detail/edit/delete, QR scanning, the
   device-local self-expiring clipboard, native app-switcher masking), and
-  the release procedure docs. The Swift for the clipboard and the
-  lifecycle mask compiles nowhere in CI today — the macOS job builds the
-  Rust XCFramework, not the Expo module — so both are device-gated in
+  the release procedure docs. The Swift now COMPILES in CI: the
+  `Mobile bridge` workflow typechecks the module's Foundation/UIKit
+  sources against the iOS SDK and a second job prebuilds the app,
+  installs pods and runs a full simulator `xcodebuild`, which is the only
+  way to compile `YhtuaVaultModule.swift` (it needs ExpoModulesCore).
+  Runtime behaviour — Face ID, Keychain access control, pasteboard
+  expiry, app-switcher appearance — remains device-gated in
   `release-checklist.md`.
 - **Blocked on physical resources** (Apple Developer Program membership,
   a physical iPhone, `eas login`): sub-gates 6b (on-device self-test,
