@@ -8,6 +8,7 @@ import {
   type LockState,
 } from '@yhtua/domain'
 import { AppState, type AppStateStatus } from 'react-native'
+import { wipeOwnedClipboard } from '../clipboard'
 import { getCryptoPort } from '../ports'
 import { clearSecretCache } from '../state/secret-cache'
 import { ensureVaultHydrated, vaultStore } from '../state/vault-store'
@@ -67,8 +68,10 @@ const executeEffects = (effects: LockEffect[]) => {
         idleTimer = undefined
         break
       case 'WIPE_CLIPBOARD':
-        // Sensitive clipboard handling (UIPasteboard localOnly + expiration)
-        // arrives with the native module in the bridge phase.
+        // Fire-and-forget: locking must never wait on the pasteboard. The
+        // OS-enforced expiration set at copy time is the backstop if this
+        // never lands.
+        void wipeOwnedClipboard()
         break
       case 'MASK_UI':
       case 'UNMASK_UI':

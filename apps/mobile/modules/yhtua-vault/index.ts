@@ -15,6 +15,8 @@ type YhtuaVaultNative = {
   exportYhp2(password: string, payload: string): Promise<string>
   importYhp2(password: string, envelopeBase64: string): Promise<string>
   destroyVault(): Promise<void>
+  copySensitive(value: string, ttlSeconds: number): Promise<boolean>
+  clearOwnedClipboard(): Promise<boolean>
   runSelfTest(fixtureJson: string): Promise<string>
 }
 
@@ -45,6 +47,16 @@ export const runNativeSelfTest = (fixtureJson: string): Promise<string> => {
   if (!native) throw new Error('Native vault module is not installed in this build')
   return native.runSelfTest(fixtureJson)
 }
+
+/** Device-local, OS-expiring pasteboard writes. Null in builds without the
+ * native module: there is deliberately no JS fallback, because a plain
+ * pasteboard write can be neither expired nor taken back. */
+export const sensitiveClipboard = native
+  ? {
+      copy: (value: string, ttlSeconds: number) => native.copySensitive(value, ttlSeconds),
+      clearOwned: () => native.clearOwnedClipboard(),
+    }
+  : null
 
 export const nativeCryptoPort: CryptoPort | null = native
   ? {

@@ -72,6 +72,17 @@ public class YhtuaVaultModule: Module {
       try mapErrors { try KeyStore.destroyKey() }
     }
 
+    // The pasteboard is main-thread-only. Copying is deliberately native:
+    // only UIPasteboard options can make the item device-local and
+    // OS-expiring, which is what makes copying a code defensible at all.
+    AsyncFunction("copySensitive") { (value: String, ttlSeconds: Double) -> Bool in
+      SensitiveClipboard.copy(value, ttlSeconds: ttlSeconds)
+    }.runOnQueue(.main)
+
+    AsyncFunction("clearOwnedClipboard") { () -> Bool in
+      SensitiveClipboard.clearOwned()
+    }.runOnQueue(.main)
+
     // Debug builds only: runs the bundled golden vectors through this exact
     // module path on the device. Release builds expose the symbol but refuse.
     AsyncFunction("runSelfTest") { (fixtureJson: String) -> String in

@@ -3,6 +3,7 @@ import { Link, router, useLocalSearchParams } from 'expo-router'
 import * as OTPAuth from 'otpauth'
 import { useEffect, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { copyCode, isClipboardAvailable } from '../../clipboard'
 import { getDecryptedSecret } from '../../state/secret-cache'
 import { deleteToken, useVault } from '../../state/vault-store'
 
@@ -68,6 +69,7 @@ export default function TokenDetail() {
 const CodePanel = ({ token }: { token: Token }) => {
   const [code, setCode] = useState('••••••')
   const [remaining, setRemaining] = useState(getRemainingTime(token.otp.period))
+  const [copyStatus, setCopyStatus] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -102,6 +104,22 @@ const CodePanel = ({ token }: { token: Token }) => {
       <Text style={styles.code}>{code.replace(/(\d{3})(?=\d)/g, '$1 ')}</Text>
       <Text style={[styles.remaining, remaining <= 5 && styles.remainingLow]}>
         {remaining}s remaining
+      </Text>
+      <Pressable
+        style={[styles.copy, !isClipboardAvailable() && styles.disabled]}
+        disabled={!isClipboardAvailable()}
+        onPress={() => {
+          void copyCode(code).then((copied) =>
+            setCopyStatus(copied ? 'Copied — clears in 30s' : 'Copy failed'),
+          )
+        }}
+      >
+        <Text style={styles.copyText}>Copy code</Text>
+      </Pressable>
+      <Text style={styles.copyStatus}>
+        {isClipboardAvailable()
+          ? (copyStatus ?? 'Stays on this device and clears itself')
+          : 'Copying needs the full app build'}
       </Text>
     </View>
   )
@@ -152,6 +170,16 @@ const styles = StyleSheet.create({
   },
   remaining: { color: '#8A8578', fontSize: 13 },
   remainingLow: { color: '#E5484D' },
+  copy: {
+    marginTop: 14,
+    paddingHorizontal: 22,
+    paddingVertical: 11,
+    borderRadius: 14,
+    backgroundColor: '#D4AF55',
+  },
+  copyText: { color: '#0B0B0F', fontWeight: '600' },
+  copyStatus: { color: '#55524A', fontSize: 12 },
+  disabled: { opacity: 0.5 },
   actions: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   secondary: {
     paddingHorizontal: 18,

@@ -89,4 +89,36 @@ describe('mobile lock host (full enforcement)', () => {
     const persisted = vaultStore.getState()
     expect(persisted.tokens.length > 0 || persisted.tombstones.length > 0).toBe(true)
   })
+
+  it('locking the vault takes back a code this app put on the clipboard', async () => {
+    const { __setSensitiveClipboardForTesting, copyCode } = await import('../src/clipboard')
+    let clears = 0
+    __setSensitiveClipboardForTesting({
+      copy: async () => true,
+      clearOwned: async () => {
+        clears += 1
+        return true
+      },
+    })
+
+    await getCryptoPort().ensureEncryptionKey()
+    await startLockHost()
+    dispatch({ type: 'VAULT_CREATED' })
+    await requestUnlock()
+    await copyCode('123456')
+
+    // Backgrounding must NOT wipe: switching apps is how the code gets
+    // pasted. Locking is the point at which the code stops being wanted.
+    setAppState('background')
+    setAppState('active')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(clears).toBe(0)
+
+    // Zero grace put the vault back to `locked`; the code survives that on
+    // its OS expiration. An explicit lock is what takes it back.
+    await requestUnlock()
+    dispatch({ type: 'MANUAL_LOCK' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(clears).toBe(1)
+  })
 })
