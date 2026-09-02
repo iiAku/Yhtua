@@ -10,6 +10,17 @@ public class YhtuaVaultModule: Module {
   public func definition() -> ModuleDefinition {
     Name("YhtuaVault")
 
+    // The app-switcher snapshot is taken before any JS listener runs, so the
+    // screen is covered on the UIKit notification itself. Installed for the
+    // module's whole lifetime — there is no JS call that can turn it off.
+    OnCreate {
+      LifecycleMask.install()
+    }
+
+    OnDestroy {
+      LifecycleMask.uninstall()
+    }
+
     AsyncFunction("vaultExists") { () -> Bool in
       try mapErrors { try KeyStore.keyExists() }
     }

@@ -30,10 +30,23 @@ registered as a test device, `eas login`.
    round trip behind the biometric prompt. Measure Argon2id (64 MiB) wall
    time during a YHP2 import; a problem is a finding to raise, never a
    parameter to lower.
-3. Device walkthrough: add/view/copy/delete token; background the app and
-   confirm the lock engages (zero grace); cancel Face ID and confirm a typed
-   error with no partial state; biometric re-enrollment invalidates the vault
-   (recovery via YHP2 documented in-app).
+3. Device walkthrough: add a token by QR scan AND by manual Base32 entry;
+   view, rename, replace a secret, delete (deleted tokens must not return
+   after a backup import); background the app and confirm the lock engages
+   (zero grace); cancel Face ID and confirm a typed error with no partial
+   state; biometric re-enrollment invalidates the vault (recovery via YHP2
+   documented in-app).
+   3b. Native lifecycle and clipboard, which no CI job can prove:
+   - the app switcher shows a BLURRED card, never a readable code, including
+     when triggered by a phone call and by the notification-centre pull;
+   - a copied code pastes successfully into another app (backgrounding must
+     not wipe it), disappears on its own within ~30s, and is gone
+     immediately after an explicit lock;
+   - the copied code does NOT appear on a paired Mac's clipboard;
+   - camera permission denial leaves a usable manual-entry path.
+     3c. Re-run step 2's self-test against THIS binary whenever a native
+     dependency changed (expo-camera and the clipboard/lifecycle Swift are
+     native): a stale build silently tests the previous binary.
 4. Flagship acceptance: desktop → iPhone YHP2 round trip AND iPhone →
    desktop, including a desktop vault migrated from the legacy format —
    identical token sets, working codes.
