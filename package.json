@@ -52,12 +52,12 @@
     "@vue/test-utils": "^2.4.11",
     "jsdom": "^30.0.1",
     "lefthook": "^2.1.10",
-    "oxfmt": "^0.61.0",
+    "oxfmt": "^0.66.0",
     "oxlint": "^1.76.0",
     "postcss": "^8.5.25",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10",
+    "vitest": "^5.0.0",
     "vue-tsc": "^3.3.8"
   },
   "overrides": {
