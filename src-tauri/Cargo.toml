@@ -31,7 +31,7 @@ tauri-plugin-dialog = "2.7.2"
 yhtua-crypto = { path = "../crates/yhtua-crypto" }
 base64.workspace = true
 thiserror.workspace = true
-dirs = "6"
+dirs = "7"
 whoami = "2.1"
 tauri-plugin-clipboard-manager = "2.3.2"
 zeroize.workspace = true
