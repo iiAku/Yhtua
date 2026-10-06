@@ -11,6 +11,9 @@ updates:
     ignore:
       - dependency-name: typescript
         update-types: ['version-update:semver-major']
+      # nuxt/nuxt#36467: 4.6.0 cannot prerender on Windows.
+      - dependency-name: nuxt
+        versions: ['4.6.0']
     open-pull-requests-limit: 10
 
   - package-ecosystem: cargo

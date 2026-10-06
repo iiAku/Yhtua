@@ -16,6 +16,8 @@ JavaScript `overrides` are limited to patched versions compatible with all reque
 
 The repository pins the current Rust stable toolchain (`1.99.0`) in CI and declares the same MSRV. TypeScript is held to the newest compatible major (`6.x`): TypeScript 7 ships no JavaScript compiler API (its package only exports `./unstable/*`), which `vue-tsc` 3.3.12 still requires. Re-test and remove this hold when Vue language tooling adds TypeScript 7 support.
 
+Nuxt is held to 4.5.x (`~4.5.2`): 4.6.0 leaves the Vue renderer external on Windows, so `nuxt generate` fails every page with "Either manifest or precomputed data must be provided" and the Windows package build breaks ([nuxt/nuxt#36467](https://github.com/nuxt/nuxt/issues/36467), fix pending in [nitrojs/nitro#4732](https://github.com/nitrojs/nitro/pull/4732)). Dependabot ignores only 4.6.0; take the first 4.6.x that passes the Windows package check.
+
 ## Documented JavaScript advisory ignores
 
 Mirrors the RUSTSEC ignore pattern in `deny.toml`: every ignored advisory

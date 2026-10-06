@@ -3,7 +3,7 @@
 ## Toolchain
 
 - Bun 1.4.0 or newer
-- Node.js 22.21 or newer (for ecosystem tools)
+- Node.js 22.12 or newer (for ecosystem tools)
 - Rust 1.99.0 with `rustfmt` and `clippy`
 - Linux Tauri packages listed in the CI workflow when building on Linux
 
