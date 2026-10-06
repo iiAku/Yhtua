@@ -1,5 +1,0 @@
-# Hoisted linker: React Native/Expo native modules must exist exactly once in
-# the workspace (expo-doctor flags bun's isolated layout as duplicate native
-# deps, which breaks native builds). Hoisting restores the single-copy layout.
-[install]
-linker = "hoisted"

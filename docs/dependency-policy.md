@@ -24,12 +24,12 @@ needs a reason here and a revisit condition, and the `audit` script in
 run that script.
 
 - `GHSA-vfj7-8cjw-p6xm` (`braces` <= 3.0.3, stack-exhaustion DoS from deeply
-  nested patterns). Reached only through `micromatch` in Metro and Nitro's
-  `globby`, which expand glob patterns written in this repository at build time;
+  nested patterns). Reached only through `micromatch` in Nitro's `globby`,
+  which expands glob patterns written in this repository at build time;
   nothing is shipped in an application package. No patched release exists.
   Revisit when `braces` publishes a fix or `micromatch` drops it.
 - `GHSA-86w9-cpqp-85rv` (`node-forge` <= 1.4.0, lax RSA PKCS#1 v1.5 signature
-  verification). Reached only through `@expo/cli` and Nitro's `listhen`, which
-  use it to create local development-server certificates, not to verify
+  verification). Reached only through Nitro's `listhen`, which uses it to
+  create local development-server certificates, not to verify
   untrusted signatures; it is not shipped. No patched release exists. Revisit
   when `node-forge` publishes a fix.

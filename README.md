@@ -96,8 +96,4 @@ Yhtua is distributed under the [MIT License](LICENSE). See [ASSET-LICENSES.md](A
 
 ## Mobile (in development)
 
-An iOS client (Expo/React Native over the same Rust crypto core via UniFFI)
-lives in `apps/mobile`. It shares `packages/domain` (schemas, merge rules,
-lock-state machine) and the byte-exact golden vectors with the desktop app;
-`docs/mobile-strategy.md` records the architecture decisions and
-`docs/release-checklist.md` the device-gated release procedure.
+An iOS client is in development on the [`mobile`](https://github.com/iiAku/Yhtua/tree/mobile) branch.

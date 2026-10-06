@@ -14,6 +14,7 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ### Build/Release
 
+- Moved the in-development iOS client (`apps/mobile`, the `yhtua-mobile` UniFFI crate, the Swift bridge checks and their CI workflow) to the `mobile` branch, so `main` carries only the desktop application. The shared `packages/domain` and `crates/yhtua-crypto` stay, since the desktop app uses them.
 - Updated JavaScript, Rust and GitHub Actions dependencies, the pinned Rust toolchain to 1.99.0 and Bun to 1.4.2. The Node.js baseline for ecosystem tools rises to 22.21, which Nuxt's CLI now requires. Patched `brace-expansion`, `shell-quote` and `simple-git` advisories through overrides; the remaining `braces` and `node-forge` advisories have no fixed release and are documented in `docs/dependency-policy.md`.
 
 ## [2.8.2] - 2026-08-03
