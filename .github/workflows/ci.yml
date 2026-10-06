@@ -131,9 +131,21 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
       - name: Build native packages
+        shell: bash
         env:
           NO_STRIP: '1'
-        run: bun run tauri build --bundles ${{ matrix.bundles }}
+        run: |
+          set -o pipefail
+          bun run tauri build --bundles ${{ matrix.bundles }} 2>&1 | tee "$RUNNER_TEMP/tauri-build.log"
+      # Raw job logs need a signed-in GitHub account; annotations are public.
+      - name: Report build failure
+        if: failure()
+        shell: bash
+        run: |
+          tail -n 80 "$RUNNER_TEMP/tauri-build.log" |
+            sed -e 's/%/%25/g' -e 's/\r//g' |
+            awk 'BEGIN { ORS = "%0A" } { print }' |
+            { read -r -d '' tail_lines || true; echo "::error title=tauri build (last 80 lines)::${tail_lines}"; }
       - name: Normalize and verify AppImage
         if: runner.os == 'Linux'
         run: scripts/patch-appimage.sh
