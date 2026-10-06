@@ -2,7 +2,7 @@
 
 1. Review [the dependency policy](dependency-policy.md), threat model changes, and all changelog entries.
 2. Choose an unused semantic version and run `bun run version:bump X.Y.Z`.
-3. Run frozen install, formatting, lint, type checks, frontend/Rust tests, both production builds, `bun audit`, `cargo audit`, `cargo deny`, CodeQL, secret scan, and version consistency.
+3. Run frozen install, formatting, lint, type checks, frontend/Rust tests, both production builds, `bun run audit` (documented ignores only), `cargo audit`, `cargo deny`, CodeQL, secret scan, and version consistency.
 4. Validate Tauri packaging on Linux x86_64, macOS arm64, and Windows x86_64. Do not advertise formats the matrix did not produce.
 5. Confirm signing/notarization configuration. Unsigned artifacts must be clearly identified; never expose signing secrets to pull requests.
 6. Review generated CycloneDX SBOMs and SHA-256 checksums, artifact names, and provenance attestations.

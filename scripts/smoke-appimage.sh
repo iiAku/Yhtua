@@ -41,8 +41,9 @@ trap cleanup EXIT
 
 # Xvfb has no GPU/compositor. Use WebKit's software compositing path so this
 # assertion tests the packaged frontend, while patch-appimage.sh separately
-# enforces the library-level graphics compatibility fix. Extract-and-run avoids
-# hosted-runner FUSE restrictions while executing the AppImage's actual AppRun.
+# verifies file modes and that libwayland-client is not bundled. Extract-and-run
+# avoids hosted-runner FUSE restrictions while executing the AppImage's actual
+# AppRun.
 setsid xvfb-run -a -s '-screen 0 1024x900x24' env \
   HOME="$smoke_dir/home" \
   XDG_DATA_HOME="$smoke_dir/data" \
