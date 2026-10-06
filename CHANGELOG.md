@@ -4,6 +4,8 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-10-07
+
 ### Fixed
 
 - Fixed the AppImage failing to start inside sandboxes that mount it with kernel permission checks, such as firejail and the AppImage catalog: the bundled `AppRun.wrapped` was executable only by its owner (`0770` from Tauri's tool cache) and the image stores files as root, so every other user got "Permission denied". The release build now makes every packaged file readable, and the launcher executable, by all users, and fails if the shipped image says otherwise.
@@ -83,7 +85,8 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 - Added frozen installs, version consistency gates, RustSec/cargo-deny policy, SBOM/checksum preparation, and hardened automation.
 
-[Unreleased]: https://github.com/iiAku/Yhtua/compare/v2.8.2...HEAD
+[Unreleased]: https://github.com/iiAku/Yhtua/compare/v2.9.0...HEAD
+[2.9.0]: https://github.com/iiAku/Yhtua/compare/v2.8.2...v2.9.0
 [2.8.2]: https://github.com/iiAku/Yhtua/compare/v2.8.1...v2.8.2
 [2.8.1]: https://github.com/iiAku/Yhtua/compare/549dfb95f7703d54678a9ca1cb1a96f5d8f08c41...v2.8.1
 [2.8.0]: https://github.com/iiAku/Yhtua/compare/v2.7.2...549dfb95f7703d54678a9ca1cb1a96f5d8f08c41

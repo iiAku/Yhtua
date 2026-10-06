@@ -382,7 +382,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "yhtua-crypto"
-version = "2.8.2"
+version = "2.9.0"
 dependencies = [
  "argon2",
  "base64",
