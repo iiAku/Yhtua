@@ -38,7 +38,6 @@ let lastActivityReport = 0
 let started = false
 
 export const getLockState = () => machine.state
-export const getSecretEpoch = () => machine.secretEpoch
 
 const executeEffects = (effects: LockEffect[]) => {
   for (const effect of effects) {
