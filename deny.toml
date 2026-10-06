@@ -10,23 +10,8 @@ targets = [
 [advisories]
 unsound = "all"
 ignore = [
-  { id = "RUSTSEC-2024-0411", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
-  { id = "RUSTSEC-2024-0412", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
-  { id = "RUSTSEC-2024-0413", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
-  { id = "RUSTSEC-2024-0414", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
-  { id = "RUSTSEC-2024-0415", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
-  { id = "RUSTSEC-2024-0416", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
-  { id = "RUSTSEC-2024-0417", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
-  { id = "RUSTSEC-2024-0418", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
-  { id = "RUSTSEC-2024-0419", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
-  { id = "RUSTSEC-2024-0420", reason = "Transitive Tauri Linux WebKitGTK binding; no maintained compatible replacement is available" },
   { id = "RUSTSEC-2024-0429", reason = "Transitive Tauri GTK3 glib iterator API that Yhtua does not call; no compatible replacement is available" },
   { id = "RUSTSEC-2024-0370", reason = "Transitive through Tauri's GTK3 bindings; not used by Yhtua production code" },
-  { id = "RUSTSEC-2025-0075", reason = "Transitive through Tauri urlpattern; no compatible replacement can be selected downstream" },
-  { id = "RUSTSEC-2025-0080", reason = "Transitive through Tauri urlpattern; no compatible replacement can be selected downstream" },
-  { id = "RUSTSEC-2025-0081", reason = "Transitive through Tauri urlpattern; no compatible replacement can be selected downstream" },
-  { id = "RUSTSEC-2025-0098", reason = "Transitive through Tauri urlpattern; no compatible replacement can be selected downstream" },
-  { id = "RUSTSEC-2025-0100", reason = "Transitive through Tauri urlpattern; no compatible replacement can be selected downstream" },
 ]
 
 [licenses]

@@ -4,6 +4,18 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the AppImage failing to start inside sandboxes that mount it with kernel permission checks, such as firejail and the AppImage catalog: the bundled `AppRun.wrapped` was executable only by its owner (`0770` from Tauri's tool cache) and the image stores files as root, so every other user got "Permission denied". The release build now makes every packaged file readable, and the launcher executable, by all users, and fails if the shipped image says otherwise.
+
+### Changed
+
+- AppImages are built with Tauri's updated linuxdeploy and GTK plugin, which fixes `EGL_BAD_PARAMETER` crashes on newer Mesa and uses the native Wayland backend on Wayland sessions instead of forcing X11. The bundler now leaves out `libwayland-client` itself, so the AppImage no longer needs Yhtua's own launcher wrapper to load the host copy.
+
+### Build/Release
+
+- Updated JavaScript, Rust and GitHub Actions dependencies, the pinned Rust toolchain to 1.99.0 and Bun to 1.4.2. The Node.js baseline for ecosystem tools rises to 22.21, which Nuxt's CLI now requires. Patched `brace-expansion`, `shell-quote` and `simple-git` advisories through overrides; the remaining `braces` and `node-forge` advisories have no fixed release and are documented in `docs/dependency-policy.md`.
+
 ## [2.8.2] - 2026-08-03
 
 ### Fixed

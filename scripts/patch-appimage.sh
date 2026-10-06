@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-# Keep the AppImage's existing runtime while removing the bundled Wayland
-# client library that conflicts with host compositor/graphics libraries.
+# Repack the AppImage with its existing runtime so every packaged file is
+# usable by whichever user mounts it, then verify the shipped artifact: no
+# bundled Wayland client library, and a launch chain everyone can execute.
 
 set -euo pipefail
 
@@ -36,6 +37,10 @@ if [[ ! -x "$plugin" ]]; then
   echo "Tauri's cached AppImage packaging plugin was not found: $plugin" >&2
   exit 1
 fi
+if ! command -v unsquashfs >/dev/null; then
+  echo "unsquashfs (squashfs-tools) is required to verify the AppImage" >&2
+  exit 1
+fi
 
 patch_dir=$(mktemp -d)
 cleanup() {
@@ -54,41 +59,25 @@ if [[ ! -x "$appdir/AppRun" || ! -d "$appdir/usr/lib" ]]; then
   exit 1
 fi
 
-mapfile -t bundled_wayland < <(
-  find "$appdir/usr/lib" -maxdepth 1 \( -type f -o -type l \) -name 'libwayland-client.so*' -print
-)
-if (( ${#bundled_wayland[@]} == 0 )); then
-  echo "AppImage contains no bundled libwayland-client; refusing an ambiguous repatch" >&2
+# A bundled libwayland-client conflicts with the host compositor and graphics
+# stack. linuxdeploy excludes it; fail loudly if a bundler change brings it back.
+if find "$appdir/usr/lib" -maxdepth 1 -name 'libwayland-client.so*' -print -quit | grep -q .; then
+  echo "AppImage bundles libwayland-client, which must come from the host" >&2
   exit 1
 fi
-for library in "${bundled_wayland[@]}"; do
-  rm -- "$library"
-done
 
-mv -- "$appdir/AppRun" "$appdir/AppRun.orig"
-cat >"$appdir/AppRun" <<'APP_RUN'
-#!/usr/bin/env bash
-
-set -e
-
-self=$(readlink -f -- "$0")
-appdir=${self%/*}
-
-# The AppDir intentionally omits libwayland-client. On Wayland, preload the
-# compositor's matching host copy before linuxdeploy adds bundled libraries.
-if [[ ${XDG_SESSION_TYPE:-} == wayland || -n ${WAYLAND_DISPLAY:-} ]]; then
-  host_wayland=$(
-    ldconfig -p 2>/dev/null |
-      awk '/libwayland-client\.so(\.0)? \(/{print $NF; exit}'
-  )
-  if [[ -n $host_wayland && -r $host_wayland ]]; then
-    export LD_PRELOAD="$host_wayland${LD_PRELOAD:+:$LD_PRELOAD}"
-  fi
+# Tauri's tool cache is 0770 and older bundlers copied that mode into the
+# AppDir as AppRun.wrapped. The squashfs stores files as root, so sandboxes
+# that mount it with kernel permission checks (firejail, the AppImage catalog)
+# denied everyone else: "AppRun.wrapped: Permission denied".
+chmod -R a+rX,go-w -- "$appdir"
+launchers=(AppRun)
+if grep -q 'AppRun\.wrapped' "$appdir/AppRun"; then
+  launchers+=(AppRun.wrapped)
 fi
-
-exec "$appdir/AppRun.orig" "$@"
-APP_RUN
-chmod 755 "$appdir/AppRun"
+for launcher in "${launchers[@]}"; do
+  chmod a+rx -- "$appdir/$launcher"
+done
 
 runtime_offset=$("$appimage" --appimage-offset)
 if [[ ! $runtime_offset =~ ^[0-9]+$ ]] || (( runtime_offset < 1 )); then
@@ -114,8 +103,34 @@ patched="$patch_dir/$(basename -- "$appimage")"
 ARCH=x86_64 "$appimagetool" --runtime-file "$runtime" "$appdir" "$patched"
 chmod 755 "$patched"
 
-if find "$appdir/usr/lib" -maxdepth 1 -name 'libwayland-client.so*' -print -quit | grep -q .; then
-  echo "Patched AppDir still contains libwayland-client" >&2
+# Check the packed artifact's stored modes. Runtime extraction cannot be used:
+# it creates every directory 0700 regardless of what the image records.
+patched_offset=$("$patched" --appimage-offset)
+mapfile -t restricted < <(
+  unsquashfs -lln -o "$patched_offset" "$patched" |
+    awk -v launchers="${launchers[*]}" '
+      BEGIN {
+        count = split(launchers, names, " ")
+        for (i = 1; i <= count; i++) required["squashfs-root/" names[i]] = 1
+      }
+      {
+        mode = $1
+        path = substr($0, index($0, "squashfs-root"))
+        if (mode ~ /^l/) next
+        if (path in required) {
+          delete required[path]
+          if (mode !~ /^-r.xr.xr.x$/) { print path; next }
+        }
+        if (substr(mode, 8, 1) != "r" || substr(mode, 6, 1) == "w" || substr(mode, 9, 1) == "w" ||
+            (substr(mode, 4, 1) ~ /[xs]/ && substr(mode, 10, 1) !~ /[xt]/) ||
+            (mode ~ /^d/ && substr(mode, 10, 1) !~ /[xt]/)) print path
+      }
+      END { for (path in required) print path " (missing)" }
+    '
+)
+if (( ${#restricted[@]} > 0 )); then
+  echo "Patched AppImage has files other users cannot read or execute:" >&2
+  printf '  %s\n' "${restricted[@]}" >&2
   exit 1
 fi
 
