@@ -1,0 +1,5 @@
+# Hoisted (flat) node_modules: the layout the Windows, macOS and Linux package
+# builds are verified on. Switching to bun's default isolated layout broke the
+# Windows package check in CI (run 37539819571).
+[install]
+linker = "hoisted"
