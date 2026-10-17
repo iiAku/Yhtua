@@ -23,8 +23,12 @@ export const generateCode = async (token: Token): Promise<string> => {
 
 /** `code` is null until a real code exists: a placeholder must never be
  * mistaken for one, least of all by the copy button. */
-export const useTotpCode = (token: Token): { code: string | null; remaining: number } => {
+export const useTotpCode = (
+  token: Token,
+): { code: string | null; remaining: number; error: string | null; retry: () => void } => {
   const [code, setCode] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
   const [remaining, setRemaining] = useState(getRemainingTime(token.otp.period))
 
   useEffect(() => {
@@ -32,12 +36,15 @@ export const useTotpCode = (token: Token): { code: string | null; remaining: num
     // The step a DISPLAYED code belongs to. Advanced only once a code for it
     // is actually installed: marking it early would both leave the previous
     // step's code on screen while a decrypt is pending, and — if that decrypt
-    // fails — suppress every retry until the next period.
+    // fails — suppress a deliberate retry.
+    setCode(null)
+    setError(null)
+    let failed = false
     let shownStep = -1
     let inFlight = false
 
     const refresh = () => {
-      if (inFlight) return
+      if (inFlight || failed) return
       const step = currentTimeStep(token.otp.period)
       inFlight = true
       void generateCode(token)
@@ -49,12 +56,19 @@ export const useTotpCode = (token: Token): { code: string | null; remaining: num
             setCode(null)
             return
           }
+          setError(null)
           shownStep = step
           setCode(value)
         })
         .catch(() => {
           inFlight = false
-          if (!cancelled) setCode(null)
+          failed = true
+          if (!cancelled) {
+            setCode(null)
+            setError(
+              'Unable to generate this code. Unlock again, or restore the token from a backup if its key is unavailable.',
+            )
+          }
         })
     }
 
@@ -73,9 +87,9 @@ export const useTotpCode = (token: Token): { code: string | null; remaining: num
       cancelled = true
       clearInterval(interval)
     }
-  }, [token])
+  }, [token, attempt])
 
-  return { code, remaining }
+  return { code, remaining, error, retry: () => setAttempt((value) => value + 1) }
 }
 
 /** Grouped for readability; a pending code reads as placeholder dots. */

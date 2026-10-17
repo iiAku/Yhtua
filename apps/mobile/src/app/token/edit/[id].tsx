@@ -1,13 +1,11 @@
 import { base32SecretSchema, tokenLabelSchema } from '@yhtua/domain'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useState } from 'react'
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Text, View } from 'react-native'
 import { editToken } from '../../../state/token-commands'
 import { useVault } from '../../../state/vault-store'
-
-// Editing is rename plus OPTIONAL secret replacement. The stored secret is
-// never decrypted for display: replacing it means typing a new one, which
-// keeps this screen free of any plaintext it did not receive from the user.
+import { Avatar, Button, Field, Notice, Screen } from '../../../ui/components'
+import { ui } from '../../../ui/theme'
 
 export default function EditToken() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -16,28 +14,24 @@ export default function EditToken() {
   const [secret, setSecret] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-
-  if (!token) {
+  if (!token)
     return (
-      <View style={styles.screen}>
-        <Text style={styles.error}>This token no longer exists.</Text>
-      </View>
+      <Screen>
+        <Notice danger>This token no longer exists.</Notice>
+        <Button title="Back to vault" onPress={() => router.replace('/')} />
+      </Screen>
     )
-  }
 
   const save = async () => {
     setError(null)
-    // Label and secret are validated by the same rules that guard creation,
-    // but independently: an edit that keeps the secret must not have to
-    // re-supply one.
     const parsedLabel = tokenLabelSchema.safeParse(label)
     if (!parsedLabel.success) {
-      setError(parsedLabel.error.issues[0]?.message ?? 'Invalid label')
+      setError(parsedLabel.error.issues[0]?.message ?? 'Invalid name')
       return
     }
     const parsedSecret = secret.length > 0 ? base32SecretSchema.safeParse(secret) : null
     if (parsedSecret && !parsedSecret.success) {
-      setError(parsedSecret.error.issues[0]?.message ?? 'Invalid secret')
+      setError(parsedSecret.error.issues[0]?.message ?? 'Invalid setup key')
       return
     }
     setSaving(true)
@@ -47,71 +41,50 @@ export default function EditToken() {
     })
     setSaving(false)
     if (result.ok) {
+      setSecret('')
       router.back()
       return
     }
     setError(result.message)
   }
-
   return (
-    <View style={styles.screen}>
-      <Text style={styles.fieldLabel}>Label</Text>
-      <TextInput
-        style={styles.input}
-        value={label}
-        onChangeText={setLabel}
-        placeholder="alice@example.com"
-        placeholderTextColor="#55524A"
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <Text style={styles.fieldLabel}>Replace secret (optional)</Text>
-      <TextInput
-        style={styles.input}
-        value={secret}
-        onChangeText={setSecret}
-        placeholder="Leave empty to keep the current secret"
-        placeholderTextColor="#55524A"
-        autoCapitalize="characters"
-        autoCorrect={false}
-        secureTextEntry
-      />
-      <Text style={styles.hint}>
-        The stored secret is never shown. Replacing it re-encrypts the new value on this device.
-      </Text>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Pressable
-        style={[styles.primary, saving && styles.disabled]}
+    <Screen>
+      <View style={ui.row}>
+        <Avatar label={token.otp.label} size={52} />
+        <View style={{ flex: 1, gap: 5 }}>
+          <Text style={ui.heading}>{token.otp.label}</Text>
+          <Text style={ui.hint}>
+            {token.otp.digits}-digit · {token.otp.period}s · {token.otp.algorithm}
+          </Text>
+        </View>
+      </View>
+      <View style={ui.card}>
+        <Field
+          label="Account name"
+          value={label}
+          onChangeText={setLabel}
+          autoCapitalize="none"
+          maxLength={256}
+          editable={!saving}
+        />
+        <Field
+          label="Replace setup key (optional)"
+          value={secret}
+          onChangeText={setSecret}
+          placeholder="Leave empty to keep your key"
+          autoCapitalize="characters"
+          secureTextEntry
+          maxLength={4096}
+          editable={!saving}
+          hint="Your existing key stays hidden. Enter a new one only if your service has changed it."
+        />
+      </View>
+      {error ? <Notice danger>{error}</Notice> : null}
+      <Button
+        title={saving ? 'Saving…' : 'Save changes'}
+        busy={saving}
         onPress={() => void save()}
-        disabled={saving}
-      >
-        <Text style={styles.primaryText}>{saving ? 'Saving…' : 'Save changes'}</Text>
-      </Pressable>
-    </View>
+      />
+    </Screen>
   )
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0B0B0F', padding: 16, gap: 8 },
-  fieldLabel: { color: '#8A8578', fontSize: 13, marginTop: 8 },
-  input: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#23232B',
-    backgroundColor: '#15151B',
-    color: '#E8E4D8',
-    padding: 12,
-    fontSize: 16,
-  },
-  hint: { color: '#55524A', fontSize: 12, lineHeight: 17 },
-  error: { color: '#E5484D', fontSize: 13, marginTop: 4 },
-  primary: {
-    marginTop: 16,
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: '#D4AF55',
-  },
-  primaryText: { color: '#0B0B0F', fontWeight: '600' },
-  disabled: { opacity: 0.6 },
-})

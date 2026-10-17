@@ -1,95 +1,128 @@
-import { Link } from 'expo-router'
+import Constants from 'expo-constants'
+import { router } from 'expo-router'
 import { useState } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Text, View } from 'react-native'
 import { dispatch } from '../../lock/host'
 import { getCryptoPort } from '../../ports'
 import { destroyVaultStorage, useVault } from '../../state/vault-store'
+import { Button, Notice, Screen } from '../../ui/components'
+import { Icon } from '../../ui/icon'
+import { colors, ui } from '../../ui/theme'
 
 export default function Settings() {
-  const tokenCount = useVault((state) => state.tokens.length)
+  const count = useVault((state) => state.tokens.length)
   const [confirming, setConfirming] = useState(false)
-
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const destroyVault = async () => {
-    // Order matters: durable storage deletion and a fresh key FIRST, the
-    // machine notification (which wipes caches) only after both stuck.
-    await destroyVaultStorage()
+    setBusy(true)
+    setError(null)
     try {
-      await getCryptoPort().resetEncryptionKey()
+      await destroyVaultStorage()
+      try {
+        await getCryptoPort().resetEncryptionKey()
+      } catch {
+        /* No ciphertext remains. */
+      }
+      dispatch({ type: 'VAULT_DESTROYED' })
+      router.replace('/')
     } catch {
-      // A failed key reset leaves a fresh empty vault with the old key —
-      // safe either way since no ciphertext remains.
+      setError('Could not clear the vault. Please try again.')
+    } finally {
+      setBusy(false)
     }
-    dispatch({ type: 'VAULT_DESTROYED' })
-    setConfirming(false)
   }
-
   return (
-    <View style={styles.screen}>
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Vault</Text>
-        <Text style={styles.cardText}>{tokenCount} token(s), encrypted at rest.</Text>
-        <Link href="/settings/transfer" asChild>
-          <Pressable style={styles.secondary}>
-            <Text style={styles.secondaryText}>Backup import / export…</Text>
-          </Pressable>
-        </Link>
+    <Screen>
+      <Text style={ui.eyebrow}>MAKE YOURSELF AT HOME</Text>
+      <Text style={ui.title}>Settings</Text>
+      <View style={ui.card}>
+        <View style={ui.row}>
+          <Icon name="shield" color={colors.accent} />
+          <Text style={ui.heading}>Your vault</Text>
+        </View>
+        <Text style={ui.body}>
+          {count} {count === 1 ? 'token' : 'tokens'}, encrypted on this iPhone.
+        </Text>
+        <Text style={ui.hint}>
+          Your vault locks when you leave the app and after 5 minutes without activity. Unlocking
+          uses your enrolled biometrics.
+        </Text>
+        <Button
+          title="Lock vault now"
+          variant="secondary"
+          icon="lock"
+          disabled={count === 0}
+          onPress={() => dispatch({ type: 'MANUAL_LOCK' })}
+        />
       </View>
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Danger zone</Text>
+      <View style={ui.card}>
+        <View style={ui.row}>
+          <Icon name="cloud" color={colors.accent} />
+          <Text style={ui.heading}>Backups & recovery</Text>
+        </View>
+        <Text style={ui.body}>
+          Keep an encrypted copy in iCloud Drive, Google Drive, or kDrive. Use the same backup
+          format as Yhtua on desktop.
+        </Text>
+        <Button
+          title="Manage backups"
+          icon="chevron"
+          variant="secondary"
+          onPress={() => router.push('/settings/transfer')}
+        />
+        <Text style={ui.hint}>
+          Changing your enrolled biometrics can invalidate the vault key. Save a backup before
+          changing Face ID or Touch ID.
+        </Text>
+      </View>
+      <View style={ui.card}>
+        <Text style={ui.heading}>Private by design</Text>
+        <Text style={ui.body}>
+          No Yhtua account, analytics, or hosted sync service. Copied codes stay on this device and
+          expire after 30 seconds.
+        </Text>
+        <Text style={ui.hint}>Yhtua {Constants.expoConfig?.version ?? '0.1.0'} · Open source</Text>
+        {__DEV__ ? (
+          <Button
+            title="Vault self-test"
+            variant="secondary"
+            onPress={() => router.push('/dev/self-test')}
+          />
+        ) : null}
+      </View>
+      <View style={[ui.card, { borderColor: 'rgba(239,68,68,0.18)' }]}>
+        <Text style={[ui.heading, { color: colors.danger }]}>Delete local vault</Text>
+        <Text style={ui.body}>
+          Removes all tokens from this iPhone. Your saved backup files are kept.
+        </Text>
         {confirming ? (
-          <View style={styles.rowGap}>
-            <Text style={styles.cardText}>
-              This permanently deletes every token on this device.
-            </Text>
-            <View style={styles.row}>
-              <Pressable style={styles.danger} onPress={() => void destroyVault()}>
-                <Text style={styles.dangerText}>Delete everything</Text>
-              </Pressable>
-              <Pressable style={styles.secondary} onPress={() => setConfirming(false)}>
-                <Text style={styles.secondaryText}>Cancel</Text>
-              </Pressable>
-            </View>
-          </View>
+          <>
+            <Notice danger>
+              Make sure you have a working backup or another way to sign in. This cannot be undone.
+            </Notice>
+            <Button
+              title="Delete all local tokens"
+              variant="danger"
+              busy={busy}
+              onPress={() => void destroyVault()}
+            />
+            <Button
+              title="Keep my vault"
+              variant="secondary"
+              disabled={busy}
+              onPress={() => setConfirming(false)}
+            />
+          </>
         ) : (
-          <Pressable style={styles.secondary} onPress={() => setConfirming(true)}>
-            <Text style={styles.dangerText}>Destroy vault…</Text>
-          </Pressable>
+          <Button
+            title="Delete local vault…"
+            variant="danger"
+            onPress={() => setConfirming(true)}
+          />
         )}
+        {error ? <Notice danger>{error}</Notice> : null}
       </View>
-    </View>
+    </Screen>
   )
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0B0B0F', padding: 16, gap: 12 },
-  card: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#23232B',
-    backgroundColor: '#15151B',
-    padding: 16,
-    gap: 6,
-  },
-  cardTitle: { color: '#E8E4D8', fontSize: 15, fontWeight: '600' },
-  cardText: { color: '#8A8578', fontSize: 13, lineHeight: 18 },
-  row: { flexDirection: 'row', gap: 10 },
-  rowGap: { gap: 10 },
-  danger: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(229,72,77,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(229,72,77,0.3)',
-  },
-  dangerText: { color: '#E5484D', fontWeight: '600', fontSize: 13 },
-  secondary: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#23232B',
-    alignSelf: 'flex-start',
-  },
-  secondaryText: { color: '#8A8578', fontWeight: '500', fontSize: 13 },
-})

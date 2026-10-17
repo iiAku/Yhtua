@@ -5,11 +5,12 @@ import {
   parseAndValidate,
   parseBoundedJson,
   plaintextBackupSchema,
+  portableBackupMetadataMatches,
   encryptedEnvelopeSchema,
   type BackupResult,
   type Token,
 } from '@yhtua/domain'
-import { getLockState } from '../lock/host'
+import { canWriteVault, dispatch, getLockState } from '../lock/host'
 import { getCryptoPort } from '../ports'
 import { getSecretEpoch } from '../state/secret-cache'
 import { parseAtRestToken, replaceVault, vaultStore } from '../state/vault-store'
@@ -24,7 +25,7 @@ export const importBackupContent = async (
   jsonContent: string,
   password: string,
 ): Promise<BackupResult> => {
-  if (getLockState() !== 'unlocked') {
+  if (!canWriteVault()) {
     return { success: false, error: 'Unlock the vault before importing' }
   }
   const epochAtStart = getSecretEpoch()
@@ -60,22 +61,54 @@ export const importBackupContent = async (
     return { success: false, error: describeIssues(payload.error) }
   }
 
+  if (
+    envelope.data.version !== undefined &&
+    !portableBackupMetadataMatches(
+      { ...envelope.data, version: envelope.data.version },
+      payload.data,
+    )
+  ) {
+    return { success: false, error: 'Backup metadata does not match its authenticated contents' }
+  }
+
   // Encrypt every secret with the device key BEFORE anything reaches state.
   const crypto = getCryptoPort()
   await crypto.ensureEncryptionKey()
+  let nativeEncrypt: typeof import('../../modules/yhtua-vault').encryptSecretsBatch | null = null
+  try {
+    nativeEncrypt = (await import('../../modules/yhtua-vault')).encryptSecretsBatch
+  } catch {
+    /* Only a missing native module selects the fixture/test port. */
+  }
+  const pending =
+    payload.data.tokens.length > 0
+      ? nativeEncrypt?.(payload.data.tokens.map((token) => token.otp.secret))
+      : null
+  // A cancellation must propagate. Never fall back to N individual prompts.
+  const ciphertexts = pending ? await pending : null
+  if (ciphertexts && ciphertexts.length !== payload.data.tokens.length) {
+    return {
+      success: false,
+      error: 'The native vault did not encrypt every token. Nothing was imported.',
+    }
+  }
   const now = Date.now()
   const encrypted: Token[] = []
-  for (const token of payload.data.tokens) {
-    const ciphertext = await crypto.encryptSecret(token.otp.secret)
-    const candidate: Token = {
+  for (const [index, token] of payload.data.tokens.entries()) {
+    const ciphertext = ciphertexts
+      ? ciphertexts[index]
+      : await crypto.encryptSecret(token.otp.secret)
+    const candidate = parseAtRestToken({
       ...token,
       updatedAt: token.updatedAt ?? now,
       otp: { ...token.otp, secret: ciphertext, encrypted: true },
-    }
-    if (parseAtRestToken(candidate)) encrypted.push(candidate)
+    })
+    if (!candidate)
+      return { success: false, error: 'A token could not be encrypted. Nothing was imported.' }
+    encrypted.push(candidate)
   }
 
-  if (getSecretEpoch() !== epochAtStart) {
+  if (getSecretEpoch() !== epochAtStart || !canWriteVault()) {
     // The lock machine cleared the secret session mid-import (backgrounding,
     // manual lock): refuse the commit rather than mutating a locked vault.
     return { success: false, error: 'The vault locked during the import — try again' }
@@ -88,6 +121,7 @@ export const importBackupContent = async (
     remoteTombstones: payload.data.tombstones,
   })
   replaceVault(merged.tokens, merged.tombstones)
+  if (getLockState() === 'uninitialized') dispatch({ type: 'VAULT_CREATED' })
   return { success: true, tokensCount: encrypted.length }
 }
 

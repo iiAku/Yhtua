@@ -1,177 +1,163 @@
-import { getAvatarPlaceholder, type Token } from '@yhtua/domain'
-import { Link, router, useLocalSearchParams } from 'expo-router'
+import type { Token } from '@yhtua/domain'
+import { router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Text, View } from 'react-native'
+import Svg, { Circle } from 'react-native-svg'
 import { copyCode, isClipboardAvailable } from '../../clipboard'
 import { formatCode, generateCode, useTotpCode } from '../../totp'
 import { deleteToken, useVault } from '../../state/vault-store'
-
-// Token detail: the full-size code, and the only place a token can be edited
-// or deleted. The plaintext secret is NEVER rendered here — unlike desktop,
-// where a reveal control is defensible behind a window; a phone screen is
-// shoulder-surfed and screenshotted, so the secret only ever exists inside
-// the transient cache that produces the code.
+import { Avatar, Button, Notice, Screen } from '../../ui/components'
+import { colors, mono, ui } from '../../ui/theme'
 
 export default function TokenDetail() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const token = useVault((state) => state.tokens.find((candidate) => candidate.id === id))
   const [confirming, setConfirming] = useState(false)
-
   useEffect(() => {
-    // The token can vanish under us (deletion, a backup import, a vault
-    // destroy from settings): leave rather than render a stale code.
-    if (!token) router.back()
+    if (!token) router.replace('/')
   }, [token])
-
-  if (!token) return <View style={styles.screen} />
-
+  if (!token) return <View style={ui.screen} />
   return (
-    <View style={styles.screen}>
+    <Screen>
       <CodePanel token={token} />
-      <View style={styles.actions}>
-        <Link href={{ pathname: '/token/edit/[id]', params: { id: token.id } }} asChild>
-          <Pressable style={styles.secondary}>
-            <Text style={styles.secondaryText}>Edit</Text>
-          </Pressable>
-        </Link>
-        {confirming ? (
-          <>
-            <Pressable
-              style={styles.danger}
-              onPress={() => {
-                deleteToken(token.id)
-                setConfirming(false)
-              }}
-            >
-              <Text style={styles.dangerText}>Delete for good</Text>
-            </Pressable>
-            <Pressable style={styles.secondary} onPress={() => setConfirming(false)}>
-              <Text style={styles.secondaryText}>Cancel</Text>
-            </Pressable>
-          </>
-        ) : (
-          <Pressable style={styles.secondary} onPress={() => setConfirming(true)}>
-            <Text style={styles.dangerText}>Delete</Text>
-          </Pressable>
-        )}
+      <View style={ui.card}>
+        <Text style={ui.eyebrow}>TOKEN DETAILS</Text>
+        <View style={[ui.row, { justifyContent: 'space-between' }]}>
+          <Text style={ui.body}>Code length</Text>
+          <Text style={ui.label}>{token.otp.digits} digits</Text>
+        </View>
+        <View style={[ui.row, { justifyContent: 'space-between' }]}>
+          <Text style={ui.body}>Refresh interval</Text>
+          <Text style={ui.label}>{token.otp.period} seconds</Text>
+        </View>
+        <View style={[ui.row, { justifyContent: 'space-between' }]}>
+          <Text style={ui.body}>Algorithm</Text>
+          <Text style={ui.label}>{token.otp.algorithm}</Text>
+        </View>
+        <Button
+          title="Edit token"
+          icon="edit"
+          variant="secondary"
+          onPress={() => router.push({ pathname: '/token/edit/[id]', params: { id: token.id } })}
+        />
       </View>
       {confirming ? (
-        <Text style={styles.warning}>
-          Deleting removes this token from this device and records a tombstone, so a later backup
-          import cannot bring it back.
-        </Text>
-      ) : null}
-    </View>
+        <View style={ui.card}>
+          <Notice danger>
+            Delete {token.otp.label} from this device? Keep another way to sign in to your account.
+            Deletion is also recorded for future backup merges.
+          </Notice>
+          <Button
+            title="Delete token permanently"
+            variant="danger"
+            onPress={() => {
+              deleteToken(token.id)
+              setConfirming(false)
+            }}
+          />
+          <Button title="Keep token" variant="secondary" onPress={() => setConfirming(false)} />
+        </View>
+      ) : (
+        <Button title="Delete token…" variant="danger" onPress={() => setConfirming(true)} />
+      )}
+    </Screen>
   )
 }
 
-const CodePanel = ({ token }: { token: Token }) => {
-  const { code, remaining } = useTotpCode(token)
+function CodePanel({ token }: { token: Token }) {
+  const { code, remaining, error, retry } = useTotpCode(token)
   const [copyStatus, setCopyStatus] = useState<string | null>(null)
-  const canCopy = code !== null && isClipboardAvailable()
-
-  // Regenerated at press time rather than copied from the rendered value: the
-  // code on screen may belong to the previous time step by the moment the
-  // button is tapped, and a stale code pasted into a login form fails.
-  const copy = async () => {
+  const [copying, setCopying] = useState(false)
+  const low = remaining <= 5
+  const circumference = 2 * Math.PI * 50
+  const tint = low ? colors.danger : colors.accent
+  useEffect(() => {
     setCopyStatus(null)
+  }, [code])
+  const copy = async () => {
+    if (copying) return
+    setCopying(true)
     try {
       const fresh = await generateCode(token)
       setCopyStatus(
-        (await copyCode(fresh)) ? 'Copied — clears itself in 30s' : 'Could not copy the code',
+        (await copyCode(fresh)) ? 'Copied. Clears in 30 seconds.' : 'Could not copy. Try again.',
       )
     } catch {
-      setCopyStatus('Could not copy the code')
+      setCopyStatus('Could not copy. Try again.')
+    } finally {
+      setCopying(false)
     }
   }
-
   return (
-    <View style={styles.panel}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{getAvatarPlaceholder(token.otp.label)}</Text>
+    <View style={{ alignItems: 'center', gap: 16, paddingVertical: 24 }}>
+      <View style={{ width: 116, height: 116, alignItems: 'center', justifyContent: 'center' }}>
+        <Svg
+          width={116}
+          height={116}
+          viewBox="0 0 116 116"
+          style={{ position: 'absolute' }}
+          aria-hidden={true}
+        >
+          <Circle cx={58} cy={58} r={50} stroke={colors.elevated} strokeWidth={3} fill="none" />
+          <Circle
+            cx={58}
+            cy={58}
+            r={50}
+            stroke={tint}
+            strokeWidth={3}
+            fill="none"
+            strokeDasharray={`${circumference} ${circumference}`}
+            strokeDashoffset={circumference * (1 - remaining / token.otp.period)}
+            strokeLinecap="round"
+            transform="rotate(-90 58 58)"
+          />
+        </Svg>
+        <Avatar label={token.otp.label} size={76} />
       </View>
-      <Text style={styles.label}>{token.otp.label}</Text>
-      {token.otp.issuer ? <Text style={styles.issuer}>{token.otp.issuer}</Text> : null}
-      <Text style={styles.code}>{formatCode(code)}</Text>
-      <Text style={[styles.remaining, remaining <= 5 && styles.remainingLow]}>
-        {remaining}s remaining
-      </Text>
-      <Pressable
-        style={[styles.copy, !canCopy && styles.disabled]}
-        disabled={!canCopy}
-        onPress={() => void copy()}
+      <Text style={[ui.heading, { fontSize: 22, textAlign: 'center' }]}>{token.otp.label}</Text>
+      {token.otp.issuer ? <Text style={ui.body}>{token.otp.issuer}</Text> : null}
+      <Text style={[ui.eyebrow, { color: colors.muted, marginTop: 12 }]}>VERIFICATION CODE</Text>
+      <Text
+        accessibilityLabel={
+          code ? `Verification code ${code.split('').join(' ')}` : 'Code unavailable'
+        }
+        adjustsFontSizeToFit
+        numberOfLines={1}
+        style={{
+          width: '100%',
+          textAlign: 'center',
+          color: colors.text,
+          fontFamily: mono,
+          fontSize: token.otp.digits === 8 ? 38 : 44,
+          fontWeight: '600',
+          fontVariant: ['tabular-nums'],
+          letterSpacing: 3,
+        }}
       >
-        <Text style={styles.copyText}>Copy code</Text>
-      </Pressable>
-      <Text style={styles.copyStatus}>
-        {isClipboardAvailable()
-          ? (copyStatus ?? 'Stays on this device and clears itself')
-          : 'Copying needs the full app build'}
+        {formatCode(code)}
+      </Text>
+      <Text style={[ui.hint, { color: tint }]}>{remaining}s until the next code</Text>
+      {error ? (
+        <View style={{ width: '100%', gap: 12 }}>
+          <Notice danger>{error}</Notice>
+          <Button title="Try generating code again" variant="secondary" onPress={retry} />
+        </View>
+      ) : null}
+      <View style={{ width: '100%', marginTop: 8 }}>
+        <Button
+          title={copyStatus?.startsWith('Copied') ? 'Copied' : 'Copy code'}
+          icon={copyStatus?.startsWith('Copied') ? 'check' : 'copy'}
+          disabled={code === null || !isClipboardAvailable()}
+          busy={copying}
+          onPress={() => void copy()}
+        />
+      </View>
+      <Text accessibilityLiveRegion="polite" style={[ui.hint, { textAlign: 'center' }]}>
+        {copyStatus ??
+          (isClipboardAvailable()
+            ? 'Device-only clipboard · automatically cleared'
+            : 'Copy is available in the installed iPhone app.')}
       </Text>
     </View>
   )
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0B0B0F', padding: 16, gap: 16 },
-  panel: {
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 32,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#23232B',
-    backgroundColor: '#15151B',
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#23232B',
-    marginBottom: 6,
-  },
-  avatarText: { color: '#D4AF55', fontSize: 20, fontWeight: '700' },
-  label: { color: '#E8E4D8', fontSize: 17, fontWeight: '600' },
-  issuer: { color: '#8A8578', fontSize: 13 },
-  code: {
-    color: '#D4AF55',
-    fontSize: 40,
-    fontWeight: '700',
-    letterSpacing: 3,
-    fontVariant: ['tabular-nums'],
-    marginTop: 8,
-  },
-  remaining: { color: '#8A8578', fontSize: 13 },
-  remainingLow: { color: '#E5484D' },
-  copy: {
-    marginTop: 14,
-    paddingHorizontal: 22,
-    paddingVertical: 11,
-    borderRadius: 14,
-    backgroundColor: '#D4AF55',
-  },
-  copyText: { color: '#0B0B0F', fontWeight: '600' },
-  copyStatus: { color: '#55524A', fontSize: 12 },
-  disabled: { opacity: 0.5 },
-  actions: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  secondary: {
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#23232B',
-  },
-  secondaryText: { color: '#8A8578', fontWeight: '500', fontSize: 13 },
-  danger: {
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 12,
-    backgroundColor: 'rgba(229,72,77,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(229,72,77,0.3)',
-  },
-  dangerText: { color: '#E5484D', fontWeight: '600', fontSize: 13 },
-  warning: { color: '#8A8578', fontSize: 12, lineHeight: 17 },
-})

@@ -1,56 +1,45 @@
-# Welcome to your Expo app 👋
+# Yhtua for iPhone
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Native iOS client on the `mobile` branch. Expo / React Native screens share the desktop vault’s dark surfaces, gold accents, colored account avatars, token timer, schemas, merge policy, and encrypted backup formats. Desktop remains a separate Tauri app.
 
-## Get started
+The native Expo module owns Keychain access and Rust encryption. Release builds refuse to run without it. Android is not supported yet. Web is a development preview, not a supported vault or a publish target.
 
-1. Install dependencies
+## Develop
 
-   ```bash
-   npm install
-   ```
+From the repository root, with Bun 1.4+, Node 22.13+ and the pinned Rust toolchain:
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```sh
+bun install --frozen-lockfile
+bun run --cwd apps/mobile start
+# Browser layout preview:
+bun run --cwd apps/mobile web
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Expo Go and the browser use a fixture-only development vault. The only accepted setup key is the public synthetic value `JBSWY3DPEHPK3PXP`. Use account names such as “Personal email” and “Work account” for previews. Real secrets, real encrypted backups, clipboard operations, and biometric behavior require the native development build. A banner identifies the fixture preview.
 
-### Other setup steps
+On macOS, `bash scripts/eas-pre-install.sh` builds the Rust XCFramework before `bun run --cwd apps/mobile ios`. For a physical iPhone, run `eas build --platform ios --profile development` from this directory after configuring Apple signing. EAS runs the same Rust hook.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Cloud backups
 
-## Learn more
+1. Install your preferred provider (Google Drive or kDrive) and enable it in **Files → Browse → More → Edit**. iCloud Drive is available through Files when enabled on the phone.
+2. To restore, choose **Restore a Yhtua backup** on the welcome screen, or **Backups → Import a backup**. Enter its password, then select the encrypted `.json` file. A first installation can restore directly; no temporary token is required.
+3. To save, choose **Backups → Save a backup**, enter and confirm a separate backup password, then **Choose where to save**. In the share sheet, choose **Save to Files** and your provider’s folder. Check that the destination contains the new file.
+4. Repeat after changes and import the new file on your other device. These are manual transfers. Desktop folder monitoring and absolute filesystem paths are omitted from mobile.
 
-To learn more about developing your project with Expo, look at the following resources:
+Portable backups use the desktop-compatible YHP2 format. Legacy encrypted desktop backups remain readable. Plaintext exports and another installation’s local ciphertext are refused. A restore merges tokens and deletion records instead of replacing the vault. Provider access and offline downloads require physical-device acceptance; the browser cannot prove them.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Verify
 
-## Join the community
+```sh
+bun run check
+bun run test --project mobile
+bunx playwright install chromium
+bun run test:mobile:ui
+cd apps/mobile
+bunx expo-doctor
+bunx expo export --platform ios
+```
 
-Join our community of developers creating universal apps.
+The browser smoke starts its own Expo server, exercises the actual screens using synthetic data, and writes screenshots to the system temporary directory under `yhtua-mobile-ui`. It covers creation, account/service search, code generation, rename, backup password validation, lock/unlock, custom eight-digit codes, deletion, and 320/390/430px layouts. Set `YHTUA_BROWSER_PATH` to use an existing Chromium executable, `YHTUA_MOBILE_PORT` to change its port, or `YHTUA_MOBILE_URL` to reuse a running preview server.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+The [readiness record](../../docs/mobile-readiness.md) distinguishes local evidence from the [native and device release gates](../../docs/release-checklist.md). A JavaScript bundle or browser screenshot does not prove an installable iOS build, working Face ID, cloud-provider access, or App Store readiness.

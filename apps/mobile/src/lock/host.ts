@@ -41,6 +41,9 @@ let backgroundedAt: number | null = null
 let started = false
 const listeners = new Set<Listener>()
 
+export const canWriteVault = (): boolean =>
+  machine.foreground && (machine.state === 'unlocked' || machine.state === 'uninitialized')
+
 export const getLockState = (): LockState => machine.state
 export const getAuthAttempt = (): number => machine.authAttempt
 

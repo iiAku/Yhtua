@@ -20,4 +20,9 @@ The repository pins the current Rust stable toolchain (`1.93.1`) in CI and decla
 
 Mirrors the RUSTSEC ignore pattern in `deny.toml`: every ignored advisory
 needs a reason here and a revisit condition, and the `audit` script in
-`package.json` passes it with `--ignore`. There are currently none.
+`package.json` passes it with `--ignore`; CI and release preflight run that script.
+
+- `GHSA-vfj7-8cjw-p6xm` (`braces` <= 3.0.3, deeply nested pattern denial of service). Included by build/development tooling through Metro and Nitro’s `micromatch`; the patterns come from the repository, not vault files, and the glob parser is not included in the native app. The GitHub advisory lists no patched version as of 2026-10-17. Revisit when a fix is published or the parent packages remove it.
+- `GHSA-86w9-cpqp-85rv` (`node-forge` <= 1.4.0, RSA signature verification). Included by Expo CLI and Nitro’s `listhen` for local development certificates, not application signature verification; not included in the native app. The GitHub advisory lists no patched version as of 2026-10-17. Revisit when a fixed version is published.
+
+The mobile dependency refresh also aligns the patched build-tool overrides with desktop main (`brace-expansion`, `simple-git`, `shell-quote`) and adds patched `sharp`, `source-map-js`, and `http-cache-semantics` versions. `react-native-screens` is constrained to the Expo-supported 4.26.x series across requesters so the native build has one copy. Expo Doctor and the browser/native build gates verify this constraint; remove it when normal resolution deduplicates the compatible version.

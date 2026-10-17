@@ -115,3 +115,19 @@ describe('creating a token under lock authority', () => {
     expect(vaultStore.getState().tokens[0]?.otp.secret).toBe('MOCK-SkJTV1kzRFBFSFBLM1BYUA==')
   })
 })
+
+describe('first-token creation lifecycle', () => {
+  it('refuses a first token that finishes encrypting after the app goes into the background', async () => {
+    dispatch({ type: 'VAULT_DESTROYED' })
+    vaultStore.setState({ version: 2, tokens: [], tombstones: [] })
+    releaseEncryption = () => undefined
+    const pending = createToken(scanned)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    dispatch({ type: 'APP_BACKGROUNDED' })
+    releaseEncryption?.()
+    releaseEncryption = null
+    await expect(pending).resolves.toMatchObject({ ok: false, reason: 'locked' })
+    expect(vaultStore.getState().tokens).toEqual([])
+    dispatch({ type: 'APP_FOREGROUNDED', elapsedMs: 10 })
+  })
+})

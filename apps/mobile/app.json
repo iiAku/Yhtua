@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "yhtua",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "updates": {
       "enabled": false
     },
@@ -19,24 +19,15 @@
       "infoPlist": {
         "NSFaceIDUsageDescription": "Face ID unlocks your encrypted authenticator tokens.",
         "ITSAppUsesNonExemptEncryption": false
-      }
-    },
-    "android": {
-      "package": "fr.gendrey.yhtua",
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "supportsTablet": false
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0B0B0F",
+          "backgroundColor": "#0a0b10",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
@@ -44,7 +35,9 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Yhtua uses the camera only to scan authenticator QR codes. Nothing is recorded or sent anywhere."
+          "cameraPermission": "Yhtua uses the camera only to scan authenticator QR codes. Nothing is recorded or sent anywhere.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
         }
       ],
       "expo-sharing"
@@ -59,6 +52,7 @@
         "projectId": "bf4a9317-2b05-425b-ad01-eeec6cb5041d"
       }
     },
-    "owner": "iiakuexpo"
+    "owner": "iiakuexpo",
+    "platforms": ["ios", "web"]
   }
 }

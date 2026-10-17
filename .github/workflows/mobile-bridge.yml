@@ -7,8 +7,9 @@ name: Mobile bridge
 # step behind this gate.
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, mobile]
     paths:
       - 'crates/**'
       - 'bridge/**'

@@ -1,93 +1,121 @@
 import { CameraView, useCameraPermissions } from 'expo-camera'
-import { router } from 'expo-router'
-import { useRef, useState } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { router, useFocusEffect } from 'expo-router'
+import { useCallback, useRef, useState } from 'react'
+import { Linking, Text, View } from 'react-native'
 import { parseOtpauthUri } from '../../otpauth-uri'
 import { createToken } from '../../state/token-commands'
-
-// The scanned secret is encrypted and stored HERE rather than handed back to
-// the entry form: a navigation parameter is state the router serializes and
-// may persist, which is the last place a plaintext TOTP secret belongs.
+import { Button, Notice, Screen } from '../../ui/components'
+import { colors, ui } from '../../ui/theme'
 
 export default function ScanToken() {
   const [permission, requestPermission] = useCameraPermissions()
   const [error, setError] = useState<string | null>(null)
-  // A camera fires the same code many times a second; one scan may be handled.
+  const [focused, setFocused] = useState(false)
+  const [saving, setSaving] = useState(false)
   const handling = useRef(false)
-
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true)
+      return () => setFocused(false)
+    }, []),
+  )
   const onScanned = async (data: string) => {
     if (handling.current) return
     handling.current = true
     setError(null)
     const scanned = parseOtpauthUri(data)
     if (!scanned) {
-      setError('That QR code is not an authenticator token Yhtua can store.')
-      handling.current = false
+      setError(
+        'This is not a supported authenticator QR code. Use the code shown in your service’s two-factor setup.',
+      )
+      // Wait for an explicit retry; repeated camera events must not continually announce errors.
       return
     }
+    setSaving(true)
     const result = await createToken(scanned)
+    setSaving(false)
     if (result.ok) {
-      // Deliberately NOT re-armed: router.back() does not unmount the camera
-      // synchronously, and a camera reports the same code many times a
-      // second — re-arming here would run a second transaction.
-      router.back()
+      router.dismissTo('/')
       return
     }
     setError(result.message)
-    handling.current = false
   }
-
-  if (!permission) return <View style={styles.screen} />
-
-  if (!permission.granted) {
+  if (!permission || !permission.granted)
     return (
-      <View style={styles.centered}>
-        <Text style={styles.text}>
-          Yhtua needs the camera to scan an authenticator QR code. Nothing is recorded and nothing
-          leaves this device.
+      <Screen>
+        <Text style={ui.eyebrow}>ADD WITH YOUR CAMERA</Text>
+        <Text style={ui.title}>Scan. Secure. Done.</Text>
+        <Text style={ui.body}>
+          Point your camera at the QR code shown when you enable two-factor authentication. Nothing
+          is recorded or sent anywhere.
         </Text>
-        <Pressable style={styles.primary} onPress={() => void requestPermission()}>
-          <Text style={styles.primaryText}>Allow camera</Text>
-        </Pressable>
-      </View>
+        {permission ? (
+          <Button
+            title={permission.canAskAgain ? 'Allow camera access' : 'Open camera settings'}
+            icon="scan"
+            onPress={() => {
+              void (permission.canAskAgain ? requestPermission() : Linking.openSettings()).catch(
+                () => setError('Could not open camera settings. You can enter the key manually.'),
+              )
+            }}
+          />
+        ) : null}
+        <Button
+          title="Enter a setup key instead"
+          variant="secondary"
+          icon="key"
+          onPress={() => router.replace('/token/new')}
+        />
+        {error ? <Notice danger>{error}</Notice> : null}
+      </Screen>
     )
-  }
-
   return (
-    <View style={styles.screen}>
-      <CameraView
-        style={styles.camera}
-        facing="back"
-        barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-        onBarcodeScanned={({ data }) => void onScanned(data)}
+    <View style={ui.screen}>
+      {focused ? (
+        <CameraView
+          style={{ flex: 1 }}
+          facing="back"
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+          onBarcodeScanned={({ data }) => void onScanned(data)}
+        />
+      ) : null}
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: '20%',
+          left: '15%',
+          right: '15%',
+          height: 240,
+          borderRadius: 24,
+          borderWidth: 2,
+          borderColor: colors.accent,
+        }}
       />
-      <View style={styles.footer}>
-        <Text style={styles.text}>Point the camera at the QR code your provider shows.</Text>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+      <View style={{ padding: 24, gap: 14 }}>
+        <Text style={[ui.body, { textAlign: 'center' }]}>
+          {saving ? 'Encrypting your token…' : 'Place your authenticator QR code inside the frame.'}
+        </Text>
+        {error ? (
+          <>
+            <Notice danger>{error}</Notice>
+            <Button
+              title="Scan again"
+              variant="secondary"
+              onPress={() => {
+                handling.current = false
+                setError(null)
+              }}
+            />
+          </>
+        ) : null}
+        <Button
+          title="Enter key manually"
+          variant="secondary"
+          disabled={saving}
+          onPress={() => router.replace('/token/new')}
+        />
       </View>
     </View>
   )
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0B0B0F' },
-  centered: {
-    flex: 1,
-    backgroundColor: '#0B0B0F',
-    padding: 24,
-    gap: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  camera: { flex: 1 },
-  footer: { padding: 16, gap: 8 },
-  text: { color: '#8A8578', fontSize: 13, lineHeight: 19, textAlign: 'center' },
-  error: { color: '#E5484D', fontSize: 13, textAlign: 'center' },
-  primary: {
-    paddingHorizontal: 24,
-    paddingVertical: 13,
-    borderRadius: 14,
-    backgroundColor: '#D4AF55',
-  },
-  primaryText: { color: '#0B0B0F', fontWeight: '600' },
-})

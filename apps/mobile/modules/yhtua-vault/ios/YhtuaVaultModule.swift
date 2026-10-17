@@ -60,6 +60,21 @@ public class YhtuaVaultModule: Module {
       }
     }
 
+    // A restore should raise one biometric prompt, not one per account.
+    // A rejected authorization aborts the entire batch before JS can commit it.
+    AsyncFunction("encryptSecrets") { (plaintexts: [String]) -> [String] in
+      guard plaintexts.count <= 10_000,
+        plaintexts.reduce(0, { $0 + $1.utf8.count }) <= 16 * 1024 * 1024
+      else {
+        throw Exception(name: "InputTooLarge", description: "Batch exceeds the vault limits")
+      }
+      return try mapErrors {
+        try KeyStore.withKey(prompt: "Import your tokens") { key in
+          try plaintexts.map { try encryptLocal(key: key, plaintext: $0) }
+        }
+      }
+    }
+
     AsyncFunction("decryptSecret") { (ciphertextBase64: String) -> String in
       try mapErrors {
         try KeyStore.withKey(prompt: "Unlock your tokens") { key in

@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, mobile]
 
 permissions:
   contents: read
@@ -35,6 +35,22 @@ jobs:
         run: bun run typecheck
       - name: Test
         run: bun run test
+      - name: Install browser for mobile UI checks
+        run: bunx playwright install --with-deps chromium
+      - name: Exercise the mobile screens
+        run: bun run test:mobile:ui
+        env:
+          YHTUA_MOBILE_SCREENSHOTS: artifacts/mobile-ui
+      - name: Upload mobile screen previews
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mobile-ui-previews
+          path: artifacts/mobile-ui
+          if-no-files-found: ignore
+      - name: Bundle the iOS app
+        working-directory: apps/mobile
+        run: bunx expo export --platform ios
       - name: Build Nuxt application
         run: bun run build
       - name: Build Astro landing site

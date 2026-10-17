@@ -10,6 +10,7 @@ type YhtuaVaultNative = {
   authenticateVault(): Promise<boolean>
   initializeVault(): Promise<boolean>
   encryptSecret(plaintext: string): Promise<string>
+  encryptSecrets(plaintexts: string[]): Promise<string[]>
   decryptSecret(ciphertextBase64: string): Promise<string>
   decryptSecrets(ciphertextsBase64: string[]): Promise<string[]>
   exportYhp2(password: string, payload: string): Promise<string>
@@ -39,6 +40,10 @@ const serialized = <T>(operation: () => Promise<T>): Promise<T> => {
  * when the native module is absent (dev mock has no biometrics). */
 export const authenticateVault = (): Promise<boolean> | null =>
   native ? native.authenticateVault() : null
+
+/** Batch encryption under one biometric checkpoint for a backup restore. */
+export const encryptSecretsBatch = (plaintexts: string[]): Promise<string[]> | null =>
+  native ? serialized(() => native.encryptSecrets(plaintexts)) : null
 
 /** Batch decryption under ONE biometric checkpoint (export flows). */
 export const decryptSecretsBatch = (ciphertexts: string[]): Promise<string[]> | null =>

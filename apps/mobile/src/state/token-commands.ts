@@ -1,6 +1,6 @@
 import { randomUUID } from 'expo-crypto'
 import type { Token } from '@yhtua/domain'
-import { dispatch, getLockState } from '../lock/host'
+import { canWriteVault, dispatch, getLockState } from '../lock/host'
 import { getCryptoPort } from '../ports'
 import { getSecretEpoch } from './secret-cache'
 import { addToken, updateToken } from './vault-store'
@@ -30,10 +30,8 @@ export type CreateTokenResult =
 /** Writing is permitted while the vault is open, and during first-run before
  * a vault exists. Every other state — locked, unlocking, masked, hydrating —
  * must not gain a token. */
-const WRITABLE = new Set(['unlocked', 'uninitialized'])
-
 export const createToken = async (parameters: NewTokenParameters): Promise<CreateTokenResult> => {
-  if (!WRITABLE.has(getLockState())) {
+  if (!canWriteVault()) {
     return { ok: false, reason: 'locked', message: 'Unlock the vault first' }
   }
   const epochBefore = getSecretEpoch()
@@ -52,7 +50,7 @@ export const createToken = async (parameters: NewTokenParameters): Promise<Creat
   }
 
   // The window between those two awaits is exactly where a lock can land.
-  if (getSecretEpoch() !== epochBefore || !WRITABLE.has(getLockState())) {
+  if (getSecretEpoch() !== epochBefore || !canWriteVault()) {
     return { ok: false, reason: 'locked', message: 'The vault locked before this token was saved' }
   }
 
@@ -85,7 +83,7 @@ export const editToken = async (
   id: string,
   changes: { label: string; secret?: string },
 ): Promise<CreateTokenResult> => {
-  if (!WRITABLE.has(getLockState())) {
+  if (!canWriteVault()) {
     return { ok: false, reason: 'locked', message: 'Unlock the vault first' }
   }
   const epochBefore = getSecretEpoch()
@@ -101,7 +99,7 @@ export const editToken = async (
         message: cause instanceof Error ? cause.message : 'Encryption failed',
       }
     }
-    if (getSecretEpoch() !== epochBefore || !WRITABLE.has(getLockState())) {
+    if (getSecretEpoch() !== epochBefore || !canWriteVault()) {
       return { ok: false, reason: 'locked', message: 'The vault locked before this edit was saved' }
     }
   }
